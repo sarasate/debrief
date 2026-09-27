@@ -3,6 +3,7 @@ use crate::error::{AppError, AppResult};
 use crate::state::RepoState;
 use git2::{Delta, Diff, DiffDelta, DiffFindOptions, DiffOptions, Patch, Repository};
 use sha1::{Digest, Sha1};
+use std::collections::HashMap;
 
 /// HEAD against the working tree, staged and unstaged combined: "what changed
 /// since the last commit". Untracked files are included with their content,
@@ -72,6 +73,7 @@ pub fn diff_file(state: &RepoState, path: &str) -> AppResult<FileDiff> {
 
 fn collect_hunks(patch: &Patch, path: &str) -> AppResult<Vec<DiffHunk>> {
     let mut hunks = Vec::with_capacity(patch.num_hunks());
+    let mut seen: HashMap<Vec<u8>, u32> = HashMap::new();
     for h in 0..patch.num_hunks() {
         let (hunk, line_count) = patch.hunk(h)?;
         let mut body = Vec::new();
@@ -95,8 +97,11 @@ fn collect_hunks(patch: &Patch, path: &str) -> AppResult<Vec<DiffHunk>> {
             });
         }
         let header = String::from_utf8_lossy(hunk.header()).trim_end().to_string();
+        let nth = seen.entry(body.clone()).or_insert(0);
+        let id = hunk_id(path, &body, *nth);
+        *nth += 1;
         hunks.push(DiffHunk {
-            id: hunk_id(path, hunk.old_start(), hunk.old_lines(), hunk.new_start(), hunk.new_lines(), &body),
+            id,
             header,
             old_start: hunk.old_start(),
             old_lines: hunk.old_lines(),
@@ -108,13 +113,16 @@ fn collect_hunks(patch: &Patch, path: &str) -> AppResult<Vec<DiffHunk>> {
     Ok(hunks)
 }
 
-/// sha1(path + ranges + body), first 12 hex chars (SPEC §3.1). The body is
-/// every line's origin char followed by its raw bytes.
-pub fn hunk_id(path: &str, old_start: u32, old_lines: u32, new_start: u32, new_lines: u32, body: &[u8]) -> String {
+/// sha1(path + body + occurrence), first 12 hex chars (SPEC §3.1). The body
+/// is every line's origin char followed by its raw bytes, context included.
+/// Line numbers are left out on purpose, so a hunk keeps its id when an
+/// edit above it shifts it; `nth` tells identical hunks in one file apart.
+pub fn hunk_id(path: &str, body: &[u8], nth: u32) -> String {
     let mut h = Sha1::new();
     h.update(path.as_bytes());
-    h.update(format!("\0{old_start},{old_lines},{new_start},{new_lines}\0").as_bytes());
+    h.update(b"\0");
     h.update(body);
+    h.update(format!("\0{nth}").as_bytes());
     h.finalize().iter().take(6).map(|b| format!("{b:02x}")).collect()
 }
 
@@ -137,13 +145,13 @@ mod tests {
 
     #[test]
     fn hunk_id_is_12_hex_chars_and_deterministic() {
-        let a = hunk_id("a.txt", 1, 3, 1, 4, b"+x\n");
+        let a = hunk_id("a.txt", b"+x\n", 0);
         assert_eq!(a.len(), 12);
         assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
-        assert_eq!(a, hunk_id("a.txt", 1, 3, 1, 4, b"+x\n"));
-        assert_ne!(a, hunk_id("b.txt", 1, 3, 1, 4, b"+x\n"));
-        assert_ne!(a, hunk_id("a.txt", 2, 3, 1, 4, b"+x\n"));
-        assert_ne!(a, hunk_id("a.txt", 1, 3, 1, 4, b"+y\n"));
+        assert_eq!(a, hunk_id("a.txt", b"+x\n", 0));
+        assert_ne!(a, hunk_id("b.txt", b"+x\n", 0));
+        assert_ne!(a, hunk_id("a.txt", b"+y\n", 0));
+        assert_ne!(a, hunk_id("a.txt", b"+x\n", 1));
     }
 
     #[test]
@@ -194,6 +202,40 @@ mod tests {
 
         assert_eq!(before.hunks[0].id, after.hunks[0].id);
         assert_ne!(before.hunks[1].id, after.hunks[1].id);
+    }
+
+    #[test]
+    fn shifting_a_hunk_keeps_its_id() {
+        let fx = Fixture::new();
+        let base = numbered(40);
+        fx.commit(&[("a.txt", &base)]);
+        let two_hunks = edit_line(&edit_line(&base, 3, "top"), 35, "bottom");
+        fx.write("a.txt", &two_hunks);
+        let before = diff_file(&fx.state(), "a.txt").unwrap();
+
+        // Grow the upper hunk by two lines: the lower one moves down.
+        fx.write("a.txt", &edit_line(&two_hunks, 3, "top\nextra 1\nextra 2"));
+        let after = diff_file(&fx.state(), "a.txt").unwrap();
+
+        assert_ne!(before.hunks[0].id, after.hunks[0].id);
+        assert_ne!(before.hunks[1].new_start, after.hunks[1].new_start, "lower hunk did move");
+        assert_eq!(before.hunks[1].id, after.hunks[1].id);
+    }
+
+    #[test]
+    fn identical_hunks_in_one_file_get_distinct_ids() {
+        let fx = Fixture::new();
+        // Two far-apart copies of the same block, edited the same way.
+        let block = "a\nb\nc\nd\ne\nf\ng\n";
+        let filler: String = (1..=20).map(|i| format!("filler {i}\n")).collect();
+        let base = format!("{block}{filler}{block}");
+        fx.commit(&[("dup.txt", &base)]);
+        fx.write("dup.txt", &base.replace("d\n", "D\n"));
+
+        let d = diff_file(&fx.state(), "dup.txt").unwrap();
+        assert_eq!(d.hunks.len(), 2);
+        assert_ne!(d.hunks[0].id, d.hunks[1].id);
+        assert_eq!(d.hunks[0].id, diff_file(&fx.state(), "dup.txt").unwrap().hunks[0].id);
     }
 
     #[test]
