@@ -1,16 +1,18 @@
-//! The review model (SPEC §7): the changed files grouped by intent. Noise
-//! and flags join in M3, review state in M4.
+//! The review model (SPEC §7): the changed files grouped by intent, with
+//! noise and flags. Review state joins in M4.
 
 use crate::error::AppResult;
-use crate::git::types::{ChangedFile, RepoStatus};
-use crate::noise::Noise;
+use crate::flags::{evaluate, is_test_path, FileFacts, Flag};
+use crate::git::status::ContentScan;
+use crate::git::types::{ChangedFile, FileStatus, RepoStatus};
+use crate::noise::{Noise, NoiseConfig};
 use crate::state::RepoState;
 use crate::transcript::parse::ParsedSession;
 use crate::transcript::sessions::{list_sessions, SessionInfo, TranscriptCache};
 use crate::transcript::{EditTool, Turn};
 use serde::Serialize;
 use git2::Repository;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 
 const TITLE_WORDS: usize = 6;
@@ -65,6 +67,16 @@ pub struct ReviewModel {
     /// Turns in prompt order, then UNATTRIBUTED, then GENERATED; empty
     /// groups are left out.
     pub groups: Vec<IntentGroup>,
+    /// Noise and flags per changed path.
+    pub files: BTreeMap<String, FileMeta>,
+    pub noise: NoiseConfig,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileMeta {
+    pub noise: bool,
+    pub flags: Vec<Flag>,
 }
 
 /// `session_id` None picks the most recently written session.
@@ -74,8 +86,10 @@ pub fn review_model(
     projects: Option<&Path>,
     session_id: Option<&str>,
 ) -> AppResult<ReviewModel> {
-    let status = crate::git::status::repo_status(state)?;
-    let roots = crate::transcript::repo_roots(&state.path()?);
+    let repo = state.open()?;
+    let (status, scans) = crate::git::status::repo_status_scanned(&repo)?;
+    let workdir = state.path()?;
+    let roots = crate::transcript::repo_roots(&workdir);
     let sessions = match projects {
         Some(p) => list_sessions(cache, p, &roots)?,
         None => vec![],
@@ -83,20 +97,61 @@ pub fn review_model(
     let chosen = session_id
         .and_then(|id| sessions.iter().find(|s| s.0.id == id))
         .or_else(|| sessions.first());
-    let noise = Noise::defaults()?;
+    let (noise, noise_config) = crate::noise::load(&workdir)?;
     let parsed = chosen.map(|s| s.1.as_ref());
     let pending = match parsed {
-        Some(p) => Some(drop_committed(p, &committed_since(&state.open()?, p)?)),
+        Some(p) => Some(drop_committed(p, &committed_since(&repo, p)?)),
         None => None,
     };
+    let groups = group(&status.files, pending.as_ref(), &noise);
+    // Without a session every file is unattributed, which says nothing.
+    let unattributed: BTreeSet<&str> = if pending.is_some() {
+        groups
+            .iter()
+            .filter(|g| g.kind == GroupKind::Unattributed)
+            .flat_map(|g| g.files.iter().map(|f| f.path.as_str()))
+            .collect()
+    } else {
+        BTreeSet::new()
+    };
+    let files = status
+        .files
+        .iter()
+        .map(|f| {
+            let is_noise = noise.matches(&f.path);
+            let scan = scans.get(&f.path);
+            let facts = FileFacts {
+                file: f,
+                scan,
+                noise: is_noise,
+                unattributed: unattributed.contains(f.path.as_str()),
+                old_lines: old_line_count(&repo, f, scan),
+            };
+            (f.path.clone(), FileMeta { noise: is_noise, flags: evaluate(&facts) })
+        })
+        .collect();
     Ok(ReviewModel {
-        groups: group(&status.files, pending.as_ref(), &noise),
+        files,
+        noise: noise_config,
+        groups,
         turns: parsed
             .map(|p| p.turns.iter().map(|t| TurnRef { index: t.index, title: short_title(&t.prompt) }).collect())
             .unwrap_or_default(),
         session: chosen.map(|s| s.0.clone()),
         status,
     })
+}
+
+/// Lines in the HEAD version of a test file; only the test-shrink rule
+/// needs it, so other files skip the blob read.
+fn old_line_count(repo: &Repository, f: &ChangedFile, scan: Option<&ContentScan>) -> Option<usize> {
+    if !matches!(f.status, FileStatus::Modified | FileStatus::Renamed) || !is_test_path(&f.path) {
+        return None;
+    }
+    let blob = repo.find_blob(scan?.old_blob?).ok()?;
+    let body = blob.content();
+    let n = body.iter().filter(|b| **b == b'\n').count();
+    Some(if body.last().is_some_and(|b| *b != b'\n') { n + 1 } else { n })
 }
 
 /// Latest commit time (epoch secs) per path, over the commits made since
@@ -390,6 +445,34 @@ mod tests {
         let d = doy - (153 * mp + 2) / 5 + 1;
         let m = if mp < 10 { mp + 3 } else { mp - 9 };
         (yoe + era * 400 + i64::from(m <= 2), m, d)
+    }
+
+    /// End to end through git: HEAD blob size, added-line scan, noise config
+    /// and rule 1 only when a session exists.
+    #[test]
+    fn review_model_flags_real_worktree_changes() {
+        use crate::git::fixture::Fixture;
+        let fx = Fixture::new();
+        let test_body: String = (1..=20).map(|i| format!("it('case {i}', () => {{}});\n")).collect();
+        fx.commit(&[("src/a.ts", "export const a = 1;\n"), ("src/a.test.ts", &test_body), ("dist/app.js", "x\n")]);
+        fx.write("src/a.ts", "export const a = 1;\nconst b = c as any; // TODO\n");
+        fx.write("src/a.test.ts", &test_body.lines().take(10).map(|l| format!("{l}\n")).collect::<String>());
+        fx.write("dist/app.js", "y // TODO\n");
+        fx.write("gen/api.ts", "// TODO generated\n");
+        fx.write(".debrief.toml", "[noise]\nextra = [\"gen/**\"]\n");
+
+        let cache = TranscriptCache::new();
+        let m = review_model(&fx.state(), &cache, None, None).unwrap();
+        let kinds = |p: &str| m.files[p].flags.iter().map(|f| f.kind).collect::<Vec<_>>();
+        use crate::flags::FlagKind::*;
+        assert_eq!(kinds("src/a.ts"), [Marker], "no session, so no rule 1");
+        assert_eq!(kinds("src/a.test.ts"), [TestRemoval]);
+        assert!(m.files["src/a.test.ts"].flags[0].reason.contains("10 of 20 lines"));
+        assert!(m.files["dist/app.js"].noise && kinds("dist/app.js").is_empty(), "noise skips the marker rule");
+        assert!(m.files["gen/api.ts"].noise, ".debrief.toml extra glob");
+        assert!(!m.files[".debrief.toml"].noise);
+        assert_eq!(m.noise.source, crate::noise::ConfigSource::File);
+        assert_eq!(m.groups.last().unwrap().kind, GroupKind::Generated);
     }
 
     #[test]

@@ -1,4 +1,5 @@
 mod error;
+mod flags;
 mod git;
 mod noise;
 mod review;
