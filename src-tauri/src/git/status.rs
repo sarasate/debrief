@@ -2,7 +2,8 @@ use super::diff::{delta_paths, delta_status, worktree_diff};
 use super::types::*;
 use crate::error::{AppError, AppResult};
 use crate::state::RepoState;
-use git2::{Patch, Repository};
+use git2::{Oid, Patch, Repository};
+use std::collections::HashMap;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
@@ -14,15 +15,39 @@ pub fn repo_info(workdir: &Path) -> RepoInfo {
     RepoInfo { workdir: workdir.to_string_lossy().to_string(), name }
 }
 
+/// Added lines scanned per file, and chars kept per line. Enough for the
+/// flag rules; minified or huge files are "large change" anyway.
+const SCAN_MAX_LINES: usize = 5_000;
+const SCAN_MAX_CHARS: usize = 2_000;
+
+/// What the flag rules need from a file's diff. Internal: never serialized,
+/// because added lines may hold secrets.
+#[derive(Debug, Clone, Default)]
+pub struct ContentScan {
+    /// (new line number, text) of added lines, capped.
+    pub added: Vec<(u32, String)>,
+    /// The HEAD blob, for the test-shrink rule.
+    pub old_blob: Option<Oid>,
+}
+
 pub fn repo_status(state: &RepoState) -> AppResult<RepoStatus> {
-    let repo = state.open()?;
+    Ok(scan(&state.open()?, false)?.0)
+}
+
+/// Status plus, when `content` is set, a ContentScan per changed path.
+pub fn repo_status_scanned(repo: &Repository) -> AppResult<(RepoStatus, HashMap<String, ContentScan>)> {
+    scan(repo, true)
+}
+
+fn scan(repo: &Repository, content: bool) -> AppResult<(RepoStatus, HashMap<String, ContentScan>)> {
     let workdir = repo
         .workdir()
         .ok_or_else(|| AppError::Other("bare repo not supported".into()))?
         .to_path_buf();
 
-    let diff = worktree_diff(&repo)?;
+    let diff = worktree_diff(repo)?;
     let mut files = Vec::with_capacity(diff.deltas().len());
+    let mut scans = HashMap::new();
     let (mut adds, mut dels) = (0, 0);
     let mut last_write: Option<i64> = None;
 
@@ -31,13 +56,22 @@ pub fn repo_status(state: &RepoState) -> AppResult<RepoStatus> {
         let Some(status) = delta_status(delta.status()) else { continue };
         let (path, old_path) = delta_paths(&delta);
 
-        let (is_binary, hunks, a, d) = match Patch::from_diff(&diff, idx)? {
+        let patch = Patch::from_diff(&diff, idx)?;
+        let (is_binary, hunks, a, d) = match &patch {
             Some(p) => {
                 let (_, a, d) = p.line_stats()?;
                 (p.delta().flags().is_binary(), p.num_hunks(), a, d)
             }
             None => (true, 0, 0, 0),
         };
+        if content {
+            let old = delta.old_file().id();
+            let mut sc = ContentScan { added: vec![], old_blob: (!old.is_zero()).then_some(old) };
+            if let (Some(p), false) = (&patch, is_binary) {
+                collect_added(p, &mut sc.added)?;
+            }
+            scans.insert(path.clone(), sc);
+        }
         adds += a;
         dels += d;
 
@@ -49,14 +83,34 @@ pub fn repo_status(state: &RepoState) -> AppResult<RepoStatus> {
     }
     files.sort_by(|a, b| a.path.cmp(&b.path));
 
-    Ok(RepoStatus {
+    let status = RepoStatus {
         repo: repo_info(&workdir),
-        head: head_info(&repo),
+        head: head_info(repo),
         files,
         adds,
         dels,
         last_write,
-    })
+    };
+    Ok((status, scans))
+}
+
+fn collect_added(p: &Patch, out: &mut Vec<(u32, String)>) -> AppResult<()> {
+    for h in 0..p.num_hunks() {
+        for l in 0..p.num_lines_in_hunk(h)? {
+            if out.len() >= SCAN_MAX_LINES {
+                return Ok(());
+            }
+            let line = p.line_in_hunk(h, l)?;
+            if line.origin() != '+' {
+                continue;
+            }
+            let text = String::from_utf8_lossy(line.content());
+            let text = text.trim_end_matches(['\n', '\r']);
+            let text: String = text.chars().take(SCAN_MAX_CHARS).collect();
+            out.push((line.new_lineno().unwrap_or(0), text));
+        }
+    }
+    Ok(())
 }
 
 fn head_info(repo: &Repository) -> Option<HeadInfo> {
