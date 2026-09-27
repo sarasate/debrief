@@ -7,7 +7,7 @@ import { errText } from "../lib/invoke";
 import { openRepoDialog } from "../lib/openRepo";
 import { pageLines, reveal, scrollPanelByLines, scrollPanelTo } from "../lib/scroll";
 import { QK } from "./useRepo";
-import type { FileDiff, RepoStatus } from "../lib/types";
+import type { FileDiff, ReviewModel } from "../lib/types";
 
 export function useKeybindings() {
   const qc = useQueryClient();
@@ -31,6 +31,7 @@ export function useKeybindings() {
         return;
       }
       if (ui.helpOpen && e.key !== "Escape" && e.key !== "?") return;
+      if (ui.palette && e.key !== "Escape") return;
 
       // Ctrl-combos are opt-in: they only match bindings that name them
       // explicitly ("ctrl+d"), so every other browser shortcut stays intact.
@@ -57,8 +58,7 @@ export function useKeybindings() {
 
 function currentView(qc: QueryClient) {
   const ui = useUI.getState();
-  const status = qc.getQueryData<RepoStatus>(QK.status);
-  return buildChangeset(status?.files ?? [], ui);
+  return buildChangeset(qc.getQueryData<ReviewModel>(QK.review(ui.sessionId)), ui);
 }
 
 /**
@@ -95,6 +95,7 @@ export async function runAction(action: string, qc: QueryClient) {
 
     // tree
     case "tree.fold": {
+      if (ui.grouping !== "tree") { ui.setOutput("folders fold in file tree mode · t to switch"); return; }
       if (!ui.selectedPath) return;
       const dir = splitPath(ui.selectedPath).dirs.join("/");
       if (!dir) { ui.setOutput(ui.selectedPath + " sits at the repo root"); return; }
@@ -103,6 +104,14 @@ export async function runAction(action: string, qc: QueryClient) {
       return;
     }
     case "tree.unfoldAll": ui.unfoldAll(); ui.setOutput("all folders unfolded"); return;
+
+    // session and grouping
+    case "grouping.toggle":
+      ui.toggleGrouping();
+      ui.setOutput(useUI.getState().grouping === "intent" ? "grouped by intent" : "grouped by file tree");
+      return;
+    case "palette.open": ui.openPalette("commands"); return;
+    case "session.pick": ui.openPalette("sessions"); return;
 
     // focus
     case "focus.next": ui.cyclePanel(1); return;
@@ -145,6 +154,9 @@ export async function runAction(action: string, qc: QueryClient) {
       ui.setOutput("resynced with worktree");
       return;
     case "help.toggle": ui.toggleHelp(); return;
-    case "close": if (ui.helpOpen) ui.toggleHelp(); return;
+    case "close":
+      if (ui.palette) ui.openPalette(null);
+      else if (ui.helpOpen) ui.toggleHelp();
+      return;
   }
 }

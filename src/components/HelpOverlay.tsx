@@ -1,7 +1,7 @@
 import { useUI } from "../store/ui";
 import { BINDINGS, keyLabel, type HelpGroup } from "../lib/keymap";
 
-const ORDER: HelpGroup[] = ["NAVIGATION", "DIFF", "FILTER", "GLOBAL"];
+const ORDER: HelpGroup[] = ["NAVIGATION", "DIFF", "FILTER", "SESSION", "GLOBAL"];
 
 /** One row per (group, desc), listing every key bound to it. */
 function rows(group: HelpGroup) {

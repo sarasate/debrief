@@ -1,6 +1,6 @@
 export type PanelId = "changeset" | "diff";
 
-export type HelpGroup = "NAVIGATION" | "DIFF" | "FILTER" | "GLOBAL";
+export type HelpGroup = "NAVIGATION" | "DIFF" | "FILTER" | "SESSION" | "GLOBAL";
 
 export interface Binding {
   key: string; // KeyboardEvent.key, or "ctrl+x"
@@ -10,6 +10,8 @@ export interface Binding {
   group: HelpGroup;
   /** Shown in the command bar, in table order. */
   hint?: { keys: string; label: string };
+  /** Listed in the command palette as `:cmd`. */
+  cmd?: string;
 }
 
 // Single source of truth — consumed by useKeybindings, HelpOverlay and CommandBar
@@ -23,8 +25,8 @@ export const BINDINGS: Binding[] = [
   { key: "G", panel: "changeset", action: "file.last", desc: "Last file", group: "NAVIGATION" },
   { key: "J", panel: "global", action: "file.next", desc: "Next file", group: "NAVIGATION" },
   { key: "K", panel: "global", action: "file.prev", desc: "Previous file", group: "NAVIGATION" },
-  { key: "z", panel: "global", action: "tree.fold", desc: "Fold / unfold current folder", group: "NAVIGATION" },
-  { key: "Z", panel: "global", action: "tree.unfoldAll", desc: "Unfold all folders", group: "NAVIGATION" },
+  { key: "z", panel: "global", action: "tree.fold", desc: "Fold / unfold folder (tree)", group: "NAVIGATION" },
+  { key: "Z", panel: "global", action: "tree.unfoldAll", desc: "Unfold all folders (tree)", group: "NAVIGATION", cmd: "unfold" },
   { key: "Tab", panel: "global", action: "focus.next", desc: "Next panel", group: "NAVIGATION" },
   { key: "l", panel: "global", action: "focus.next", desc: "Next panel", group: "NAVIGATION" },
   { key: "ArrowRight", panel: "global", action: "focus.next", desc: "Next panel", group: "NAVIGATION" },
@@ -47,14 +49,19 @@ export const BINDINGS: Binding[] = [
 
   // Filters
   { key: "/", panel: "global", action: "filter.query", desc: "Filter by path", group: "FILTER", hint: { keys: "/", label: "filter" } },
-  { key: "1", panel: "global", action: "filter.all", desc: "Show all files", group: "FILTER" },
-  { key: "2", panel: "global", action: "filter.open", desc: "Show open files", group: "FILTER" },
-  { key: "3", panel: "global", action: "filter.flagged", desc: "Show flagged files", group: "FILTER" },
+  { key: "1", panel: "global", action: "filter.all", desc: "Show all files", group: "FILTER", cmd: "all" },
+  { key: "2", panel: "global", action: "filter.open", desc: "Show open files", group: "FILTER", cmd: "open-files" },
+  { key: "3", panel: "global", action: "filter.flagged", desc: "Show flagged files", group: "FILTER", cmd: "flagged" },
+
+  // Session and grouping
+  { key: "t", panel: "global", action: "grouping.toggle", desc: "Group by intent / file tree", group: "SESSION", hint: { keys: "t", label: "tree" }, cmd: "tree" },
+  { key: "S", panel: "global", action: "session.pick", desc: "Pick Claude session", group: "SESSION", hint: { keys: ":session", label: "session" }, cmd: "session" },
+  { key: ":", panel: "global", action: "palette.open", desc: "Command palette", group: "SESSION" },
 
   // Global
-  { key: "⌘O", panel: "global", action: "repo.open", desc: "Open repository", group: "GLOBAL", hint: { keys: "⌘o", label: "open" } },
-  { key: "R", panel: "global", action: "refresh", desc: "Refresh", group: "GLOBAL" },
-  { key: "?", panel: "global", action: "help.toggle", desc: "Help", group: "GLOBAL", hint: { keys: "?", label: "help" } },
+  { key: "⌘O", panel: "global", action: "repo.open", desc: "Open repository", group: "GLOBAL", hint: { keys: "⌘o", label: "open" }, cmd: "open" },
+  { key: "R", panel: "global", action: "refresh", desc: "Refresh", group: "GLOBAL", cmd: "refresh" },
+  { key: "?", panel: "global", action: "help.toggle", desc: "Help", group: "GLOBAL", hint: { keys: "?", label: "help" }, cmd: "help" },
   { key: "Escape", panel: "global", action: "close", desc: "Close / cancel", group: "GLOBAL" },
 ];
 
