@@ -52,6 +52,8 @@ export const BINDINGS: Binding[] = [
   { key: "1", panel: "global", action: "filter.all", desc: "Show all files", group: "FILTER", cmd: "all" },
   { key: "2", panel: "global", action: "filter.open", desc: "Show open files", group: "FILTER", cmd: "open-files" },
   { key: "3", panel: "global", action: "filter.flagged", desc: "Show flagged files", group: "FILTER", cmd: "flagged" },
+  { key: "m", panel: "global", action: "filter.mask", desc: "Mask generated & lockfiles", group: "FILTER", hint: { keys: "m", label: "mask" }, cmd: "mask" },
+  { key: "!", panel: "global", action: "flag.jump", desc: "Jump to flagged line", group: "FILTER" },
 
   // Session and grouping
   { key: "t", panel: "global", action: "grouping.toggle", desc: "Group by intent / file tree", group: "SESSION", hint: { keys: "t", label: "tree" }, cmd: "tree" },

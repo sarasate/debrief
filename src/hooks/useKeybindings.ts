@@ -76,6 +76,18 @@ function step(order: string[], cur: string | null, delta: 1 | -1): string | null
   return order[before < 0 ? order.length - 1 : before];
 }
 
+/** Scroll the diff to a new-side line number and select its hunk. */
+export function jumpToLine(line: number) {
+  const el = document.querySelector<HTMLElement>(`[data-panel-scroll="diff"] [data-new-line="${line}"]`);
+  if (!el) { useUI.getState().setOutput(`line ${line} is outside the diff`); return; }
+  const hunk = el.closest<HTMLElement>("[data-hunk]")?.dataset.hunk;
+  if (hunk) useUI.getState().setHunk(hunk);
+  el.scrollIntoView({ block: "center" });
+  el.classList.add("dc-flash");
+  setTimeout(() => el.classList.remove("dc-flash"), 900);
+  useUI.getState().setOutput(`jumped to line ${line}`);
+}
+
 function selectFile(path: string | null) {
   if (!path) return;
   useUI.getState().select(path);
@@ -146,6 +158,20 @@ export async function runAction(action: string, qc: QueryClient) {
     case "filter.all": ui.setFilter("all"); return;
     case "filter.open": ui.setFilter("open"); return;
     case "filter.flagged": ui.setFilter("flagged"); return;
+    case "filter.mask": {
+      ui.toggleMask();
+      const model = qc.getQueryData<ReviewModel>(QK.review(ui.sessionId));
+      const n = Object.values(model?.files ?? {}).filter((m) => m.noise).length;
+      ui.setOutput(`${useUI.getState().maskNoise ? "masked" : "unmasked"} ${n} generated & lock file${n === 1 ? "" : "s"}`);
+      return;
+    }
+    case "flag.jump": {
+      const model = qc.getQueryData<ReviewModel>(QK.review(ui.sessionId));
+      const line = ui.selectedPath ? model?.files[ui.selectedPath]?.flags.find((f) => f.line != null)?.line : null;
+      if (line == null) { ui.setOutput("no flagged line in this file"); return; }
+      jumpToLine(line);
+      return;
+    }
 
     // global
     case "repo.open": await openRepoDialog(qc); return;
