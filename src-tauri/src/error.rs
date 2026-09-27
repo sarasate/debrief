@@ -13,6 +13,8 @@ pub enum AppError {
     NoRepo,
     #[error("invalid input: {0}")]
     Input(String),
+    #[error("glob error: {0}")]
+    Glob(#[from] globset::Error),
     #[error("notify error: {0}")]
     Notify(#[from] notify::Error),
     #[error("other: {0}")]
