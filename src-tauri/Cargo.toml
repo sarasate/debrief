@@ -1,0 +1,29 @@
+[package]
+name = "debrief"
+version = "0.1.0"
+description = "Review the uncommitted changes a Claude Code session left behind"
+authors = ["Luis Hoefer"]
+edition = "2021"
+
+[lib]
+# The `_lib` suffix keeps the lib name distinct from the bin name
+# (see https://github.com/rust-lang/cargo/issues/8519).
+name = "debrief_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2.7.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+git2 = "0.21.0"
+notify = "8.2.0"
+thiserror = "2.0.18"
+parking_lot = "0.12.5"
+sha1 = "0.10"
+
+[dev-dependencies]
+tempfile = "3"
