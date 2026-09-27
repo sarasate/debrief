@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { HudFrame } from "../components/HudFrame";
 import { StatusChip } from "../components/StatusChip";
 import { useChangeset, useDiffFile, useReview, useStatus } from "../hooks/useRepo";
-import { runAction } from "../hooks/useKeybindings";
+import { jumpToLine, runAction } from "../hooks/useKeybindings";
 import { groupOf, splitPath } from "../lib/changeset";
 import { errText } from "../lib/invoke";
 import { keyFor } from "../lib/keymap";
@@ -95,6 +95,7 @@ export function DiffPanel() {
         className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-3 px-[14px] pt-3 pb-5"
       >
         {path && <Briefing path={path} />}
+        {path && <FlagBanner path={path} />}
 
         {!path && <Notice text={status && !status.files.length ? "NO SIGNAL · WORKTREE CLEAN" : "NO SIGNAL · SELECT A FILE"} />}
         {path && error && <Notice text={errText(error)} danger />}
@@ -137,6 +138,32 @@ function Briefing({ path }: { path: string }) {
           ))}
         </span>
       )}
+    </div>
+  );
+}
+
+function FlagBanner({ path }: { path: string }) {
+  const { data: flags } = useReview((m) => m.files[path]?.flags);
+  if (!flags?.length) return null;
+  return (
+    <div className="flex-none flex flex-col gap-[5px] px-[13px] py-[11px] bg-sig-warn/[.08] border border-sig-warn/45">
+      <span className="text-[10px] tracking-[0.22em] text-sig-warn">
+        ⚠ FLAGGED FOR CLOSER LOOK{flags.length > 1 ? ` · ${flags.length}` : ""}
+      </span>
+      {flags.map((f, i) => (
+        <span key={i} className="flex items-baseline gap-2 text-[12px] leading-[1.6] text-sig-warnInk">
+          <span className="flex-1 min-w-0 break-words">{f.reason}</span>
+          {f.line != null && (
+            <button
+              type="button"
+              onClick={() => jumpToLine(f.line!)}
+              className="dc-hov flex-none h-[22px] px-2 border border-sig-warn/45 text-[10px] tracking-[0.12em] text-sig-warn"
+            >
+              ! L{f.line}
+            </button>
+          )}
+        </span>
+      ))}
     </div>
   );
 }
@@ -190,7 +217,7 @@ const SIGN = { addition: "+", deletion: "−", context: " " } as const;
 
 function Line({ line }: { line: DiffLine }) {
   return (
-    <div data-line className={`flex min-w-max text-[12px] leading-[1.92] ${LINE_CLASS[line.kind]}`}>
+    <div data-line data-new-line={line.newLineno ?? undefined} className={`flex min-w-max text-[12px] leading-[1.92] ${LINE_CLASS[line.kind]}`}>
       <span className="w-10 flex-none text-right pr-2 text-ink-darkest select-none">{line.oldLineno ?? ""}</span>
       <span className="w-10 flex-none text-right pr-2 text-ink-darkest select-none">{line.newLineno ?? ""}</span>
       <span className="w-[18px] flex-none text-center select-none">{SIGN[line.kind]}</span>

@@ -1,11 +1,12 @@
 import { HudFrame } from "../components/HudFrame";
-import { useStatus } from "../hooks/useRepo";
+import { useReview } from "../hooks/useRepo";
 
 // Review state (viewed, verdicts) lands in M4/M5. Until then nothing is
-// cleared or decided, and every hunk counts as open.
+// cleared or decided, and every hunk counts as open. Noise files count in
+// the header totals but not here (SPEC §3.4).
 export function OpsPanel() {
-  const { data } = useStatus();
-  const files = data?.files ?? [];
+  const { data } = useReview();
+  const files = (data?.status.files ?? []).filter((f) => !data?.files[f.path]?.noise);
   const cleared = 0;
   const pct = files.length ? Math.round((cleared / files.length) * 100) : 0;
   const hunks = files.reduce((n, f) => n + f.hunks, 0);

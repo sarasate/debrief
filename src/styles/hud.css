@@ -173,3 +173,10 @@ body,
 input, textarea {
   font-family: "JetBrains Mono", ui-monospace, monospace;
 }
+
+/* A diff line reached from a flag: brief amber outline */
+.dc-flash {
+  outline: 1px solid #ffb000;
+  outline-offset: -1px;
+  background: color-mix(in srgb, #ffb000 14%, transparent);
+}

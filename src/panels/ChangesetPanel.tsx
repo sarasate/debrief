@@ -24,9 +24,11 @@ export function ChangesetPanel() {
   const query = useUI((s) => s.query);
   const filter = useUI((s) => s.filter);
   const grouping = useUI((s) => s.grouping);
-  const counts = filterCounts(view.base);
+  const { data: model } = useReview();
+  const maskNoise = useUI((s) => s.maskNoise);
+  const counts = filterCounts(model, view.base);
   const total = data?.files.length ?? 0;
-  const { data: noiseCount = 0 } = useReview((m) => m.groups.find((g) => g.kind === "generated")?.files.length ?? 0);
+  const configError = model?.noise.error;
   const qc = useQueryClient();
   const setGrouping = (g: Grouping) => grouping !== g && void runAction("grouping.toggle", qc);
 
@@ -88,10 +90,24 @@ export function ChangesetPanel() {
             </button>
           ))}
         </div>
-        <label title="Masking arrives with M3" className="flex items-center gap-2 text-[10.5px] tracking-[0.1em] text-ink-dim opacity-40">
-          <input type="checkbox" checked={false} disabled readOnly className="m-0 accent-[var(--ac)]" />
-          MASK GENERATED &amp; LOCKFILES ({noiseCount})
+        <label
+          title={model?.noise.globs.join("  ")}
+          className="flex items-center gap-2 text-[10.5px] tracking-[0.1em] text-ink-dim cursor-pointer"
+        >
+          <input
+            type="checkbox"
+            checked={maskNoise}
+            onChange={() => void runAction("filter.mask", qc)}
+            className="m-0 accent-[var(--ac)]"
+          />
+          MASK GENERATED &amp; LOCKFILES ({view.noiseCount})
+          {model?.noise.source === "file" && <span className="text-ink-faint">· .debrief.toml</span>}
         </label>
+        {configError && (
+          <div className="px-2 py-[6px] border border-sig-warn/45 bg-sig-warn/[.08] text-[10.5px] leading-[1.5] text-sig-warnInk break-words">
+            {configError} · using default globs
+          </div>
+        )}
       </div>
 
       <nav
@@ -102,7 +118,15 @@ export function ChangesetPanel() {
         {error && <Empty text={errText(error)} danger />}
         {isLoading && <Empty text="SCANNING WORKTREE…" />}
         {data && total === 0 && <Empty text="NO SIGNAL · WORKTREE CLEAN" />}
-        {data && total > 0 && view.rows.length === 0 && <Empty text="NO SIGNAL · NOTHING MATCHES" />}
+        {data && total > 0 && view.rows.length === 0 && (
+          <Empty
+            text={
+              view.base.length === 0 && maskNoise && view.noiseCount === total
+                ? "ONLY GENERATED FILES CHANGED · M TO UNMASK"
+                : "NO SIGNAL · NOTHING MATCHES"
+            }
+          />
+        )}
         {view.rows.map((r) =>
           r.kind === "group" ? (
             <GroupRow key={"g:" + r.id} row={r} />
@@ -160,6 +184,7 @@ function FolderRow({ row }: { row: Extract<Row, { kind: "folder" }> }) {
 function FileRow({ row }: { row: Extract<Row, { kind: "file" }> }) {
   const f = row.file;
   const active = useUI((s) => s.selectedPath === f.path);
+  const { data: flags } = useReview((m) => m.files[f.path]?.flags);
   const { name, dirs } = splitPath(f.path);
 
   return (
@@ -196,6 +221,15 @@ function FileRow({ row }: { row: Extract<Row, { kind: "file" }> }) {
           <span className="text-[10px] text-ink-faint whitespace-nowrap overflow-hidden text-ellipsis">{dirs.join("/")}</span>
         )}
       </span>
+      {flags && flags.length > 0 && (
+        <span
+          aria-label="Flagged"
+          title={flags.map((x) => x.reason).join("\n")}
+          className="flex-none px-1 text-[10px] font-bold text-ink-void bg-sig-warn"
+        >
+          !
+        </span>
+      )}
       {f.isBinary ? (
         <span className="text-[10px] tracking-[0.12em] text-ink-faint">BIN</span>
       ) : (

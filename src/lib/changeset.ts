@@ -10,13 +10,15 @@ export type Row =
   | { kind: "file"; file: ChangedFile; pad: number; showDir: boolean };
 
 export interface ChangesetView {
-  /** Files matching the path query — what the filter pill counts are based on. */
+  /** Files matching the path query and the noise mask — what the filter pill counts are based on. */
   base: ChangedFile[];
   /** `base` narrowed by the ALL / OPEN / FLAGGED filter. */
   visible: ChangedFile[];
   rows: Row[];
   /** Paths of the file rows on screen, top to bottom. */
   order: string[];
+  /** Noise files in the changeset, masked or not. */
+  noiseCount: number;
 }
 
 export interface ChangesetOpts {
@@ -24,18 +26,25 @@ export interface ChangesetOpts {
   filter: FileFilter;
   collapsed: Record<string, boolean>;
   grouping: Grouping;
+  maskNoise: boolean;
 }
 
-// Review state arrives in M4 and flags in M3; until then every file is open
-// and none is flagged.
+// Review state arrives in M4; until then every file is open.
 const isOpen = (_f: ChangedFile) => true;
-const isFlagged = (_f: ChangedFile) => false;
 
-export function filterCounts(base: ChangedFile[]): Record<FileFilter, number> {
+export function isNoise(model: ReviewModel | undefined, path: string): boolean {
+  return !!model?.files[path]?.noise;
+}
+
+export function isFlagged(model: ReviewModel | undefined, path: string): boolean {
+  return (model?.files[path]?.flags.length ?? 0) > 0;
+}
+
+export function filterCounts(model: ReviewModel | undefined, base: ChangedFile[]): Record<FileFilter, number> {
   return {
     all: base.length,
     open: base.filter(isOpen).length,
-    flagged: base.filter(isFlagged).length,
+    flagged: base.filter((f) => isFlagged(model, f.path)).length,
   };
 }
 
@@ -53,13 +62,16 @@ export function groupOf(model: ReviewModel | undefined, path: string | null): In
 export function buildChangeset(model: ReviewModel | undefined, opts: ChangesetOpts): ChangesetView {
   const files = model?.status.files ?? [];
   const q = opts.query.trim().toLowerCase();
-  const base = files.filter((f) => !q || f.path.toLowerCase().includes(q));
-  const visible = base.filter((f) =>
-    opts.filter === "open" ? isOpen(f) : opts.filter === "flagged" ? isFlagged(f) : true,
+  const noiseCount = files.filter((f) => isNoise(model, f.path)).length;
+  const base = files.filter(
+    (f) => (!opts.maskNoise || !isNoise(model, f.path)) && (!q || f.path.toLowerCase().includes(q)),
   );
-  return opts.grouping === "intent" && model
-    ? { base, visible, ...intentRows(model, visible) }
-    : { base, visible, ...treeRows(visible, opts.collapsed) };
+  const visible = base.filter((f) =>
+    opts.filter === "open" ? isOpen(f) : opts.filter === "flagged" ? isFlagged(model, f.path) : true,
+  );
+  const rows =
+    opts.grouping === "intent" && model ? intentRows(model, visible) : treeRows(visible, opts.collapsed);
+  return { base, visible, noiseCount, ...rows };
 }
 
 function intentRows(model: ReviewModel, visible: ChangedFile[]) {

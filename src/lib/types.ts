@@ -122,9 +122,34 @@ export interface IntentGroup {
   files: GroupFile[];
 }
 
+// Noise (SPEC §3.4) and flags (§3.5)
+
+export type FlagKind = "unattributed" | "marker" | "testRemoval" | "secret" | "conflict" | "large";
+
+export interface Flag {
+  kind: FlagKind;
+  /** Never contains a secret's value. */
+  reason: string;
+  line: number | null;
+}
+
+export interface FileMeta {
+  noise: boolean;
+  flags: Flag[];
+}
+
+export interface NoiseConfig {
+  globs: string[];
+  source: "defaults" | "file";
+  /** Why .debrief.toml was ignored. */
+  error: string | null;
+}
+
 export interface ReviewModel {
   status: RepoStatus;
   session: SessionInfo | null;
   turns: { index: number; title: string }[];
   groups: IntentGroup[];
+  files: Record<string, FileMeta>;
+  noise: NoiseConfig;
 }

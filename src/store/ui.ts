@@ -9,6 +9,8 @@ interface UIState {
   focus: PanelId;
   grouping: Grouping;
   filter: FileFilter;
+  /** Hide generated files and lockfiles (SPEC §3.4). */
+  maskNoise: boolean;
   query: string;
   /** Folder paths folded in FILE TREE mode. */
   collapsed: Record<string, boolean>;
@@ -27,6 +29,7 @@ interface UIState {
   setFocus: (p: PanelId) => void;
   cyclePanel: (dir: 1 | -1) => void;
   setFilter: (f: FileFilter) => void;
+  toggleMask: () => void;
   toggleGrouping: () => void;
   setSession: (id: string | null) => void;
   openPalette: (mode: PaletteMode | null) => void;
@@ -51,6 +54,7 @@ export const useUI = create<UIState>((set, get) => ({
   focus: "diff",
   grouping: "intent",
   filter: "all",
+  maskNoise: true,
   query: "",
   collapsed: {},
   selectedPath: null,
@@ -69,6 +73,7 @@ export const useUI = create<UIState>((set, get) => ({
     set({ focus: PANEL_ORDER[n] });
   },
   setFilter: (f) => set({ filter: f }),
+  toggleMask: () => set((s) => ({ maskNoise: !s.maskNoise })),
   toggleGrouping: () => set((s) => ({ grouping: s.grouping === "intent" ? "tree" : "intent" })),
   setSession: (id) => set({ sessionId: id }),
   openPalette: (mode) => set({ palette: mode }),

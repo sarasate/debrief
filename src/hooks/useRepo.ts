@@ -55,8 +55,9 @@ export function useChangeset() {
   const filter = useUI((s) => s.filter);
   const collapsed = useUI((s) => s.collapsed);
   const grouping = useUI((s) => s.grouping);
+  const maskNoise = useUI((s) => s.maskNoise);
   return useMemo(
-    () => buildChangeset(data, { query, filter, collapsed, grouping }),
-    [data, query, filter, collapsed, grouping],
+    () => buildChangeset(data, { query, filter, collapsed, grouping, maskNoise }),
+    [data, query, filter, collapsed, grouping, maskNoise],
   );
 }

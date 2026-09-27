@@ -96,6 +96,14 @@ Default globs, overridable in `.debrief.toml` at the repo root:
 ```
 Noise files still count in the header totals, but not in review progress.
 
+`.debrief.toml` (read only, never written):
+```toml
+[noise]
+globs = ["*.lock"]            # replaces the defaults
+extra = ["**/*.generated.cs"] # adds to them (applied after `globs`)
+```
+Bare patterns (`*.lock`) match the file name at any depth; patterns with a `/` match the repo-relative path. A file that fails to parse, has unknown keys or an invalid glob is ignored with a visible warning, and the defaults apply.
+
 ### 3.5 Flags ("needs a closer look")
 Each flag has a short reason string. v1 rules:
 1. The file changed but isn't in the ledger (unattributed) and isn't noise.
@@ -104,6 +112,8 @@ Each flag has a short reason string. v1 rules:
 4. A `.env*` file changed, or added lines match a secret pattern (`AKIA…`, `-----BEGIN`, `sk-…`, long base64 after `KEY=`/`SECRET=`/`TOKEN=`). Show only the pattern name, never the value.
 5. Conflict markers are present.
 6. More than 400 changed lines in a non-noise file ("large change").
+
+Rule 1 applies only when a session is linked (without one, every file would be flagged). Noise files skip rules 1, 2, 3 and 6 but still get 4 and 5. Rule 5 looks for `<<<<<<<` / `>>>>>>>` in added lines (a bare `=======` is a Markdown/RST heading) and for conflicted index entries. Rule 4's value check ignores placeholders: a `KEY=`/`SECRET=`/`TOKEN=` value must be 24+ base64-ish chars mixing letters and digits. Only added lines are scanned, at most 5,000 per file.
 
 ## 4. Review state
 
