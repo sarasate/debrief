@@ -1,9 +1,13 @@
-import { useRepoCurrent, useStatus } from "../hooks/useRepo";
+import { useRepoCurrent, useReview } from "../hooks/useRepo";
 import { agoLabel, useNow } from "../hooks/useNow";
 
 export function StatusStrip() {
   const { data: repo } = useRepoCurrent();
-  const { data } = useStatus();
+  const { data: model } = useReview();
+  const data = model?.status;
+  const session = model?.session ?? null;
+  // Claude's last edit when a session is linked, else the newest dirty file.
+  const lastWrite = session?.lastEditAt ? Date.parse(session.lastEditAt) : data?.lastWrite ?? null;
   const now = useNow(5_000);
   const head = data?.head;
   const branch = !data
@@ -39,8 +43,8 @@ export function StatusStrip() {
             HEAD <span className="text-ink-light">{head?.sha.slice(0, 6) || "——————"}</span>
           </span>
           <span className="whitespace-nowrap">
-            AGENT <span className="text-sig-agent">CLAUDE</span> · LAST WRITE{" "}
-            <span className="text-ink-light">{agoLabel(data?.lastWrite ?? null, now)}</span>
+            AGENT <span className={session ? "text-sig-agent" : "text-ink-faint"}>{session ? "CLAUDE" : "NO SESSION"}</span> · LAST WRITE{" "}
+            <span className="text-ink-light">{agoLabel(lastWrite, now)}</span>
           </span>
         </div>
         <div className="flex items-center flex-none">
@@ -69,8 +73,8 @@ export function StatusStrip() {
 
       {/* CLASSIFIED TAPE */}
       <div className="relative z-10 flex-none px-5 py-1 border-b border-hud/10 bg-hud/[.03] text-[9.5px] tracking-[0.34em] text-[color:color-mix(in_srgb,var(--ac)_34%,theme(colors.ink.deepest))] whitespace-nowrap overflow-hidden">
-        // AGENT DEBRIEF // UNCOMMITTED CHANGES // SESSION: NONE LINKED // {files} FILES
-        TOUCHED // REVIEW BEFORE COMMIT // EYES ONLY //
+        // AGENT DEBRIEF // UNCOMMITTED CHANGES // SESSION: {session ? session.title.toUpperCase() : "NONE LINKED"} //{" "}
+        {files} FILES TOUCHED // REVIEW BEFORE COMMIT // EYES ONLY //
       </div>
     </>
   );

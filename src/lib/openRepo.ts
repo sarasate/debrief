@@ -14,6 +14,7 @@ export async function openRepoDialog(qc: QueryClient) {
     const info = await api.repoOpen(selected);
     const ui = useUI.getState();
     ui.select(null);
+    ui.setSession(null);
     ui.unfoldAll();
     ui.setQuery("");
     await qc.invalidateQueries({ queryKey: ["repo"] });

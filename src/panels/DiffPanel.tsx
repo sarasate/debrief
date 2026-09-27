@@ -2,9 +2,9 @@ import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { HudFrame } from "../components/HudFrame";
 import { StatusChip } from "../components/StatusChip";
-import { useChangeset, useDiffFile, useStatus } from "../hooks/useRepo";
+import { useChangeset, useDiffFile, useReview, useStatus } from "../hooks/useRepo";
 import { runAction } from "../hooks/useKeybindings";
-import { splitPath } from "../lib/changeset";
+import { groupOf, splitPath } from "../lib/changeset";
 import { errText } from "../lib/invoke";
 import { keyFor } from "../lib/keymap";
 import { useUI } from "../store/ui";
@@ -94,14 +94,7 @@ export function DiffPanel() {
         data-panel-scroll="diff"
         className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-3 px-[14px] pt-3 pb-5"
       >
-        {path && (
-          <div className="flex flex-col gap-[5px] px-[13px] py-[11px] bg-sig-agent/[.07] border border-sig-agent/30">
-            <span className="text-[10px] tracking-[0.22em] text-sig-agent">AGENT BRIEFING · NO SESSION LINKED</span>
-            <span className="text-[12px] leading-[1.6] text-ink-light">
-              No Claude transcript is linked to this worktree yet, so there is no briefing for this change.
-            </span>
-          </div>
-        )}
+        {path && <Briefing path={path} />}
 
         {!path && <Notice text={status && !status.files.length ? "NO SIGNAL · WORKTREE CLEAN" : "NO SIGNAL · SELECT A FILE"} />}
         {path && error && <Notice text={errText(error)} danger />}
@@ -111,6 +104,40 @@ export function DiffPanel() {
         {diff?.hunks.map((h) => <Hunk key={h.id} hunk={h} current={h.id === hunkId} />)}
       </div>
     </HudFrame>
+  );
+}
+
+function Briefing({ path }: { path: string }) {
+  const { data: model } = useReview();
+  const group = groupOf(model, path);
+  const file = group?.files.find((f) => f.path === path);
+  const turnTitle = (i: number) => model?.turns.find((t) => t.index === i)?.title ?? "";
+
+  return (
+    <div className="flex-none flex flex-col gap-[5px] px-[13px] py-[11px] bg-sig-agent/[.07] border border-sig-agent/30">
+      <span className="text-[10px] tracking-[0.22em] text-sig-agent whitespace-nowrap overflow-hidden text-ellipsis">
+        AGENT BRIEFING · {group ? group.title : model ? "NOT IN ANY GROUP" : "SCANNING"}
+      </span>
+      {group?.prompt && (
+        <span className="text-[11px] leading-[1.55] text-ink-dim whitespace-pre-wrap break-words">
+          <span className="text-sig-agent">TURN {group.turn} ›</span> {group.prompt}
+        </span>
+      )}
+      <span className="text-[12px] leading-[1.6] text-ink-light whitespace-pre-wrap break-words">
+        {group?.briefing ?? "No briefing for this file."}
+      </span>
+      {file && (file.tools.length > 0 || file.alsoTurns.length > 0) && (
+        <span className="text-[10.5px] tracking-[0.08em] text-ink-faint">
+          {file.tools.length > 0 && <>via {file.tools.join(", ")}</>}
+          {file.alsoTurns.map((t) => (
+            <span key={t}>
+              {" · "}also touched in turn {t}
+              {turnTitle(t) && <span className="text-ink-dim"> ({turnTitle(t)})</span>}
+            </span>
+          ))}
+        </span>
+      )}
+    </div>
   );
 }
 

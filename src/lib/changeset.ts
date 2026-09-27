@@ -1,12 +1,13 @@
 // The Changeset list as data: which files pass the filters, the rows to draw
 // and the order j/k walk. Pure, so the key handler and the panel agree.
 
-import type { FileFilter } from "../store/ui";
-import type { ChangedFile } from "./types";
+import type { FileFilter, Grouping } from "../store/ui";
+import type { ChangedFile, GroupKind, IntentGroup, ReviewModel } from "./types";
 
 export type Row =
+  | { kind: "group"; id: string; group: GroupKind; title: string; count: number; adds: number; dels: number }
   | { kind: "folder"; key: string; name: string; pad: number; open: boolean }
-  | { kind: "file"; file: ChangedFile; pad: number };
+  | { kind: "file"; file: ChangedFile; pad: number; showDir: boolean };
 
 export interface ChangesetView {
   /** Files matching the path query — what the filter pill counts are based on. */
@@ -16,6 +17,13 @@ export interface ChangesetView {
   rows: Row[];
   /** Paths of the file rows on screen, top to bottom. */
   order: string[];
+}
+
+export interface ChangesetOpts {
+  query: string;
+  filter: FileFilter;
+  collapsed: Record<string, boolean>;
+  grouping: Grouping;
 }
 
 // Review state arrives in M4 and flags in M3; until then every file is open
@@ -36,19 +44,61 @@ export function splitPath(path: string) {
   return { name: parts[parts.length - 1], dirs: parts.slice(0, -1) };
 }
 
-export function buildChangeset(
-  files: ChangedFile[],
-  opts: { query: string; filter: FileFilter; collapsed: Record<string, boolean> },
-): ChangesetView {
+/** The intent group a path belongs to. */
+export function groupOf(model: ReviewModel | undefined, path: string | null): IntentGroup | undefined {
+  if (!model || !path) return undefined;
+  return model.groups.find((g) => g.files.some((f) => f.path === path));
+}
+
+export function buildChangeset(model: ReviewModel | undefined, opts: ChangesetOpts): ChangesetView {
+  const files = model?.status.files ?? [];
   const q = opts.query.trim().toLowerCase();
   const base = files.filter((f) => !q || f.path.toLowerCase().includes(q));
   const visible = base.filter((f) =>
     opts.filter === "open" ? isOpen(f) : opts.filter === "flagged" ? isFlagged(f) : true,
   );
+  return opts.grouping === "intent" && model
+    ? { base, visible, ...intentRows(model, visible) }
+    : { base, visible, ...treeRows(visible, opts.collapsed) };
+}
 
+function intentRows(model: ReviewModel, visible: ChangedFile[]) {
+  const byPath = new Map(visible.map((f) => [f.path, f]));
+  const rows: Row[] = [];
+  const order: string[] = [];
+  const placed = new Set<string>();
+  for (const g of model.groups) {
+    const fs = g.files.flatMap((gf) => byPath.get(gf.path) ?? []);
+    if (!fs.length) continue;
+    rows.push({
+      kind: "group",
+      id: g.id,
+      group: g.kind,
+      title: g.title,
+      count: fs.length,
+      adds: fs.reduce((n, f) => n + f.adds, 0),
+      dels: fs.reduce((n, f) => n + f.dels, 0),
+    });
+    for (const f of fs) {
+      rows.push({ kind: "file", file: f, pad: 10, showDir: true });
+      order.push(f.path);
+      placed.add(f.path);
+    }
+  }
+  // The model's status and groups come from one call, so nothing should be
+  // left over; list stragglers at the end rather than hide them.
+  for (const f of visible) {
+    if (placed.has(f.path)) continue;
+    rows.push({ kind: "file", file: f, pad: 10, showDir: true });
+    order.push(f.path);
+  }
+  return { rows, order };
+}
+
+function treeRows(visible: ChangedFile[], collapsed: Record<string, boolean>) {
   const sorted = [...visible].sort((a, b) => (a.path < b.path ? -1 : 1));
   const folded = (dirs: string[], upto: number) => {
-    for (let k = 1; k <= upto; k++) if (opts.collapsed[dirs.slice(0, k).join("/")]) return true;
+    for (let k = 1; k <= upto; k++) if (collapsed[dirs.slice(0, k).join("/")]) return true;
     return false;
   };
 
@@ -62,13 +112,13 @@ export function buildChangeset(
     for (let d = shared; d < dirs.length; d++) {
       if (folded(dirs, d)) break;
       const key = dirs.slice(0, d + 1).join("/");
-      rows.push({ kind: "folder", key, name: dirs[d], pad: 8 + d * 14, open: !opts.collapsed[key] });
+      rows.push({ kind: "folder", key, name: dirs[d], pad: 8 + d * 14, open: !collapsed[key] });
     }
     prev = dirs;
     if (!folded(dirs, dirs.length)) {
-      rows.push({ kind: "file", file: f, pad: 8 + dirs.length * 14 + 14 });
+      rows.push({ kind: "file", file: f, pad: 8 + dirs.length * 14 + 14, showDir: false });
       order.push(f.path);
     }
   }
-  return { base, visible, rows, order };
+  return { rows, order };
 }

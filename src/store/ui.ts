@@ -3,6 +3,7 @@ import type { PanelId } from "../lib/keymap";
 
 export type Grouping = "intent" | "tree";
 export type FileFilter = "all" | "open" | "flagged";
+export type PaletteMode = "commands" | "sessions";
 
 interface UIState {
   focus: PanelId;
@@ -15,6 +16,9 @@ interface UIState {
   selectedPath: string | null;
   /** Hunk cursor, by stable hunk id. */
   hunkId: string | null;
+  /** Pinned session; null follows the newest one, so a new session shows up by itself. */
+  sessionId: string | null;
+  palette: PaletteMode | null;
   helpOpen: boolean;
   toast: { kind: "ok" | "err"; text: string; id: number } | null;
   errPanel: PanelId | null;
@@ -23,6 +27,9 @@ interface UIState {
   setFocus: (p: PanelId) => void;
   cyclePanel: (dir: 1 | -1) => void;
   setFilter: (f: FileFilter) => void;
+  toggleGrouping: () => void;
+  setSession: (id: string | null) => void;
+  openPalette: (mode: PaletteMode | null) => void;
   setQuery: (q: string) => void;
   toggleFolder: (dir: string) => void;
   setFolder: (dir: string, collapsed: boolean) => void;
@@ -42,12 +49,14 @@ const PANEL_ORDER: PanelId[] = ["changeset", "diff"];
 
 export const useUI = create<UIState>((set, get) => ({
   focus: "diff",
-  grouping: "tree", // BY INTENT needs a transcript (M2)
+  grouping: "intent",
   filter: "all",
   query: "",
   collapsed: {},
   selectedPath: null,
   hunkId: null,
+  sessionId: null,
+  palette: null,
   helpOpen: false,
   toast: null,
   errPanel: null,
@@ -60,6 +69,9 @@ export const useUI = create<UIState>((set, get) => ({
     set({ focus: PANEL_ORDER[n] });
   },
   setFilter: (f) => set({ filter: f }),
+  toggleGrouping: () => set((s) => ({ grouping: s.grouping === "intent" ? "tree" : "intent" })),
+  setSession: (id) => set({ sessionId: id }),
+  openPalette: (mode) => set({ palette: mode }),
   setQuery: (q) => set({ query: q }),
   toggleFolder: (dir) =>
     set((s) => ({ collapsed: { ...s.collapsed, [dir]: !s.collapsed[dir] } })),

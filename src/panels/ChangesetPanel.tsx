@@ -1,9 +1,11 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { HudFrame } from "../components/HudFrame";
 import { StatusChip } from "../components/StatusChip";
-import { useChangeset, useStatus } from "../hooks/useRepo";
+import { useChangeset, useReview, useStatus } from "../hooks/useRepo";
+import { runAction } from "../hooks/useKeybindings";
 import { filterCounts, splitPath, type Row } from "../lib/changeset";
 import { errText } from "../lib/invoke";
-import { useUI, type FileFilter } from "../store/ui";
+import { useUI, type FileFilter, type Grouping } from "../store/ui";
 
 const pill = (active: boolean) =>
   active
@@ -24,6 +26,9 @@ export function ChangesetPanel() {
   const grouping = useUI((s) => s.grouping);
   const counts = filterCounts(view.base);
   const total = data?.files.length ?? 0;
+  const { data: noiseCount = 0 } = useReview((m) => m.groups.find((g) => g.kind === "generated")?.files.length ?? 0);
+  const qc = useQueryClient();
+  const setGrouping = (g: Grouping) => grouping !== g && void runAction("grouping.toggle", qc);
 
   return (
     <HudFrame
@@ -58,14 +63,14 @@ export function ChangesetPanel() {
         <div className="grid grid-cols-2 gap-[6px]">
           <button
             type="button"
-            disabled
-            title="Intent groups need a Claude transcript"
-            className={`h-[30px] text-[10.5px] tracking-[0.16em] border disabled:opacity-40 ${pill(grouping === "intent")}`}
+            onClick={() => setGrouping("intent")}
+            className={`dc-hov h-[30px] text-[10.5px] tracking-[0.16em] border ${pill(grouping === "intent")}`}
           >
             BY INTENT
           </button>
           <button
             type="button"
+            onClick={() => setGrouping("tree")}
             className={`dc-hov h-[30px] text-[10.5px] tracking-[0.16em] border ${pill(grouping === "tree")}`}
           >
             FILE TREE
@@ -83,9 +88,9 @@ export function ChangesetPanel() {
             </button>
           ))}
         </div>
-        <label className="flex items-center gap-2 text-[10.5px] tracking-[0.1em] text-ink-dim opacity-40">
-          <input type="checkbox" checked disabled readOnly className="m-0 accent-[var(--ac)]" />
-          MASK GENERATED &amp; LOCKFILES (0)
+        <label title="Masking arrives with M3" className="flex items-center gap-2 text-[10.5px] tracking-[0.1em] text-ink-dim opacity-40">
+          <input type="checkbox" checked={false} disabled readOnly className="m-0 accent-[var(--ac)]" />
+          MASK GENERATED &amp; LOCKFILES ({noiseCount})
         </label>
       </div>
 
@@ -98,7 +103,15 @@ export function ChangesetPanel() {
         {isLoading && <Empty text="SCANNING WORKTREE…" />}
         {data && total === 0 && <Empty text="NO SIGNAL · WORKTREE CLEAN" />}
         {data && total > 0 && view.rows.length === 0 && <Empty text="NO SIGNAL · NOTHING MATCHES" />}
-        {view.rows.map((r) => (r.kind === "folder" ? <FolderRow key={"d:" + r.key} row={r} /> : <FileRow key={r.file.path} row={r} />))}
+        {view.rows.map((r) =>
+          r.kind === "group" ? (
+            <GroupRow key={"g:" + r.id} row={r} />
+          ) : r.kind === "folder" ? (
+            <FolderRow key={"d:" + r.key} row={r} />
+          ) : (
+            <FileRow key={r.file.path} row={r} />
+          ),
+        )}
       </nav>
     </HudFrame>
   );
@@ -113,6 +126,19 @@ function Empty({ text, danger = false }: { text: string; danger?: boolean }) {
       ].join(" ")}
     >
       {text}
+    </div>
+  );
+}
+
+function GroupRow({ row }: { row: Extract<Row, { kind: "group" }> }) {
+  return (
+    <div className="flex items-baseline gap-2 px-2 pt-3 pb-[5px]">
+      <span title={row.title} className="min-w-0 text-[10px] tracking-[0.18em] text-hud whitespace-nowrap overflow-hidden text-ellipsis">
+        {row.title} · {row.count}
+      </span>
+      <span className="flex-1" />
+      <span className="text-[10.5px] text-sig-add">+{row.adds}</span>
+      <span className="text-[10.5px] text-sig-delete">−{row.dels}</span>
     </div>
   );
 }
@@ -134,7 +160,7 @@ function FolderRow({ row }: { row: Extract<Row, { kind: "folder" }> }) {
 function FileRow({ row }: { row: Extract<Row, { kind: "file" }> }) {
   const f = row.file;
   const active = useUI((s) => s.selectedPath === f.path);
-  const { name } = splitPath(f.path);
+  const { name, dirs } = splitPath(f.path);
 
   return (
     <button
@@ -166,6 +192,9 @@ function FileRow({ row }: { row: Extract<Row, { kind: "file" }> }) {
         >
           {name}
         </span>
+        {row.showDir && dirs.length > 0 && (
+          <span className="text-[10px] text-ink-faint whitespace-nowrap overflow-hidden text-ellipsis">{dirs.join("/")}</span>
+        )}
       </span>
       {f.isBinary ? (
         <span className="text-[10px] tracking-[0.12em] text-ink-faint">BIN</span>

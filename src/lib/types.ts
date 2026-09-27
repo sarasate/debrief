@@ -64,3 +64,67 @@ export interface FileDiff {
   isBinary: boolean;
   hunks: DiffHunk[];
 }
+
+// Transcripts (SPEC §3.2) and intent groups (§3.3)
+
+export type EditTool = "Edit" | "MultiEdit" | "Write" | "NotebookEdit";
+
+export interface SessionInfo {
+  id: string;
+  title: string;
+  firstPrompt: string | null;
+  cwd: string;
+  startedAt: string | null;
+  /** ms since epoch, newest write to the transcript or its subagents */
+  updatedAt: number;
+  lastEditAt: string | null;
+  turns: number;
+  edits: number;
+  path: string;
+}
+
+export interface LedgerEntry {
+  path: string;
+  tool: EditTool;
+  timestamp: string;
+  turn: number;
+}
+
+export interface Turn {
+  index: number;
+  prompt: string;
+  summary: string;
+  files: string[];
+  timestamp: string;
+  commands: string[];
+}
+
+export interface Ledger {
+  turns: Turn[];
+  entries: LedgerEntry[];
+}
+
+export type GroupKind = "turn" | "unattributed" | "generated";
+
+export interface GroupFile {
+  path: string;
+  tools: EditTool[];
+  alsoTurns: number[];
+}
+
+export interface IntentGroup {
+  id: string;
+  kind: GroupKind;
+  title: string;
+  briefing: string;
+  turn: number | null;
+  prompt: string | null;
+  files: GroupFile[];
+}
+
+export interface ReviewModel {
+  status: RepoStatus;
+  session: SessionInfo | null;
+  turns: { index: number; title: string }[];
+  groups: IntentGroup[];
+}

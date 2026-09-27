@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { StatusStrip } from "./components/StatusStrip";
 import { CommandBar } from "./components/CommandBar";
 import { HelpOverlay } from "./components/HelpOverlay";
+import { CommandPalette } from "./components/CommandPalette";
 import { Toast } from "./components/Toast";
 import { ChangesetPanel } from "./panels/ChangesetPanel";
 import { DiffPanel } from "./panels/DiffPanel";
@@ -55,6 +56,7 @@ export default function App() {
       </main>
 
       <CommandBar />
+      <CommandPalette />
       <HelpOverlay />
       <Toast />
     </div>
