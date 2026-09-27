@@ -31,14 +31,29 @@ Tweaks carried over from DEADBOLT: accent (`#3df0ff`, `#39ff7d`, `#ffb000`, `#ff
 ### 3.1 Git (git2)
 - `status`: working tree plus index against HEAD, untracked files included, ignored files excluded. Renames detected (`find_similar`).
 - `diff_file(path)`: working tree vs HEAD (staged and unstaged combined; this is a review of "what changed since the last commit"). Three lines of context. Binary files → "binary file — no preview".
-- A hunk id is `sha1(path + old_start + old_lines + new_start + new_lines + hunk body)`, truncated to 12 characters. It must stay stable across refreshes as long as the hunk hasn't changed.
+- A hunk id is `sha1(path + hunk body + n)`, truncated to 12 characters. The body is every line's origin char (`+`, `-`, space) followed by its bytes, context lines included; `n` counts earlier hunks in the same file with an identical body (usually 0). Line numbers are deliberately **not** hashed: an edit above a hunk shifts its ranges, and the id (and any verdict keyed on it) must survive that. The id changes only when the hunk's own lines, or their surrounding context, change.
 
 ### 3.2 Claude Code transcripts
-Claude Code stores sessions as JSONL at `~/.claude/projects/<project-dir-slug>/<session-id>.jsonl`, where the slug is the absolute cwd with `/` replaced by `-`.
+Claude Code stores sessions as JSONL at `~/.claude/projects/<project-dir-slug>/<session-id>.jsonl` (`$CLAUDE_CONFIG_DIR/projects` when that is set). The slug is the absolute cwd with **every non-alphanumeric character** replaced by `-`, so `/w/repo/.claude/worktrees/x` becomes `-w-repo--claude-worktrees-x`.
 
-> **Milestone 2 starts by checking this against a real transcript on this machine.** Adapt the parser to what's actually there and write a fixture from a real (redacted) file. Don't trust this section blindly.
+Verified against real Claude Code 2.1.x transcripts in M2; fixtures live in `src-tauri/tests/fixtures` (a real session redacted with `scripts/redact-transcript.py`, plus hand-written variants). Parse defensively: skip lines that aren't JSON objects (a live session can end in a half-written line) and ignore unknown `type`s.
 
-Expected per line: `type` (`user` | `assistant` | `summary` …), `sessionId`, `cwd`, `timestamp`, and `message.content[]` blocks. Tool calls are `{"type":"tool_use","name":"Edit"|"MultiEdit"|"Write"|"NotebookEdit","input":{"file_path":…}}`. `Bash` calls may also write files (`mv`, `sed -i`, codegen); record those commands but don't guess their paths.
+**Line types.** Only these matter; the rest (`attachment`, `mode`, `permission-mode`, `last-prompt`, `file-history-*`, `queue-operation`, `system`, …) are skipped.
+
+| `type` | Used for |
+|---|---|
+| `user` | Prompts and tool results. Carries `sessionId`, `cwd`, `timestamp`, `isSidechain`, `message.content` (a string, or blocks). |
+| `assistant` | `message.content[]` blocks: `text`, `thinking`, `tool_use`. |
+| `ai-title` | `aiTitle`: the session title. The last one wins. |
+| `summary` | `summary`: title in older transcripts; used only when there is no `ai-title`. |
+
+**Human prompts.** Most `user` lines aren't prompts: tool results, task notifications, `!` shell echoes (`<bash-input>`, `<bash-stdout>`), `[Request interrupted by user]` markers and `isMeta` lines all use `type: "user"`. A line starts a turn when:
+- it is not `isSidechain` and not `isMeta`, and contains no `tool_result` block, and
+- `origin.kind == "human"`. Lines without `origin` (older transcripts) count unless their text starts with `<` or `[Request interrupted`.
+
+**Edits.** `tool_use` blocks named `Edit`, `MultiEdit`, `Write` or `NotebookEdit`, with the path in `input.file_path` (`input.notebook_path` for notebooks). Relative paths resolve against that line's `cwd`, which can change mid-session. An edit counts only if its `tool_result` (matched on `tool_use_id`) doesn't have `is_error: true`; that's how failed and permission-denied calls look. Paths outside the repo are dropped. `Bash` calls may also write files (`mv`, `sed -i`, codegen); record their `input.command` per turn, but don't guess their paths and never run them.
+
+**Subagents.** Task/agent subagents write their own transcripts to `<session-id>/subagents/agent-*.jsonl` next to the main file (all lines `isSidechain: true`). Their edits belong to the parent turn that was running at the time, i.e. the last human prompt at or before the edit's timestamp. Subagent text never becomes a turn summary.
 
 Build a **ledger** for the chosen session:
 
@@ -47,20 +62,24 @@ interface LedgerEntry {
   path: string;          // repo-relative
   tool: "Edit" | "MultiEdit" | "Write" | "NotebookEdit";
   timestamp: string;
-  turn: number;          // index of the user prompt this edit belongs to
+  turn: number;          // 1-based index of the turn this edit belongs to
 }
 interface Turn {
-  index: number;
+  index: number;         // 1-based
   prompt: string;        // the user message that started the turn (first 280 chars)
   summary: string;       // the last assistant text block of the turn (first 600 chars)
   files: string[];
+  timestamp: string;     // when the prompt was sent
+  commands: string[];    // Bash commands run in the turn (first 200 chars each), recorded only
 }
 ```
 
-Session selection: default to the most recent session whose `cwd` is the repo root (or inside it), with a picker (`:session`) for the others. Show the session's `summary` line (if one exists) as the title in the tape, otherwise the first prompt.
+Edits recorded before the first prompt go to a placeholder turn 1. An edit that a commit made after it already contains is dropped from grouping (the commit touched the same path later than the edit), so work committed mid-session can't claim what is dirty now.
+
+Session selection: list every transcript in a project dir whose slug is the repo root's slug or starts with it plus `-`, then keep those whose first `cwd` is the repo root or inside it (the prefix match alone would also catch `repo-live` for `repo`). Drop sessions with no prompts and no edits. Newest first by the latest mtime of the transcript and its subagents. Default to the newest, and keep following the newest until one is picked with `:session`. The tape shows the `ai-title` (else the `summary` line, else the first prompt).
 
 ### 3.3 Intent groups
-v1, deterministic: **one group per turn**. The group title is the turn prompt shortened to about 6 words and upper-cased; the briefing text is the turn's final assistant message. A file edited in several turns belongs to its **last** turn. The briefing also lists the other turns ("also touched in turn 2").
+v1, deterministic: **one group per turn**. The group title is the turn prompt shortened to about 6 words and upper-cased; the briefing text is the turn's final assistant message. A file edited in several turns belongs to its **last** turn. The briefing also lists the other turns ("also touched in turn 2"). A renamed file matches ledger entries under its old or new path. Turns whose files are all clean (or committed) are left out.
 
 Fixed groups after the turns:
 - **UNATTRIBUTED**: changed files that no ledger entry covers (my own edits, `Bash` side effects). Always shown, never masked.
