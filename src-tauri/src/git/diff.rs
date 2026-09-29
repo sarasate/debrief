@@ -77,11 +77,26 @@ pub(crate) fn hunk_ids(patch: &Patch, path: &str) -> AppResult<Vec<String>> {
 }
 
 fn collect_hunks(patch: &Patch, path: &str) -> AppResult<Vec<DiffHunk>> {
+    Ok(walk_hunks(patch, path)?.into_iter().map(|(h, _)| h).collect())
+}
+
+/// A hunk's exact bytes on each side, for reverse-apply. Each side is the
+/// concatenation of its lines' raw content, so a missing final newline is
+/// preserved (libgit2 leaves the `\n` off such a line).
+#[derive(Debug, Clone, Default)]
+pub(crate) struct RawSides {
+    pub old: Vec<u8>,
+    pub new: Vec<u8>,
+}
+
+/// Every hunk with its raw sides; the single source of hunk ids.
+pub(crate) fn walk_hunks(patch: &Patch, path: &str) -> AppResult<Vec<(DiffHunk, RawSides)>> {
     let mut hunks = Vec::with_capacity(patch.num_hunks());
     let mut seen: HashMap<Vec<u8>, u32> = HashMap::new();
     for h in 0..patch.num_hunks() {
         let (hunk, line_count) = patch.hunk(h)?;
         let mut body = Vec::new();
+        let mut raw = RawSides::default();
         let mut lines = Vec::with_capacity(line_count);
         for l in 0..line_count {
             let line = patch.line_in_hunk(h, l)?;
@@ -93,6 +108,12 @@ fn collect_hunks(patch: &Patch, path: &str) -> AppResult<Vec<DiffHunk>> {
             };
             body.push(line.origin() as u8);
             body.extend_from_slice(line.content());
+            if kind != DiffLineKind::Addition {
+                raw.old.extend_from_slice(line.content());
+            }
+            if kind != DiffLineKind::Deletion {
+                raw.new.extend_from_slice(line.content());
+            }
             let content = String::from_utf8_lossy(line.content());
             lines.push(DiffLine {
                 kind,
@@ -105,7 +126,7 @@ fn collect_hunks(patch: &Patch, path: &str) -> AppResult<Vec<DiffHunk>> {
         let nth = seen.entry(body.clone()).or_insert(0);
         let id = hunk_id(path, &body, *nth);
         *nth += 1;
-        hunks.push(DiffHunk {
+        let dh = DiffHunk {
             id,
             header,
             old_start: hunk.old_start(),
@@ -113,7 +134,8 @@ fn collect_hunks(patch: &Patch, path: &str) -> AppResult<Vec<DiffHunk>> {
             new_start: hunk.new_start(),
             new_lines: hunk.new_lines(),
             lines,
-        });
+        };
+        hunks.push((dh, raw));
     }
     Ok(hunks)
 }
