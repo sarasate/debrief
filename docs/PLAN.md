@@ -73,7 +73,7 @@ enum Target {
 
 **What changes for actions.** Committed changes can't be "discarded" from the worktree safely.
 - `x` still records a revert verdict, and **transmit lists reverted hunks as requests** ("please revert these in a new commit") instead of "already discarded".
-- `a` (stage) and `d` (discard) are disabled in range mode and say why in the command bar.
+- `a` (stage) and `d` (discard) act only on uncommitted hunks: in a range with `worktree: true` they work on the part past `head`; committed hunks are read-only and say so in the command bar. With `worktree: false` both keys are disabled.
 - CLAUDE.md's rule stands: never commit, push or move refs.
 
 **PRs.** `gh pr list` / `gh pr view --json number,title,body,headRefName,headRefOid,baseRefName,url` are read-only metadata calls. A PR becomes `Range { base: baseRefName, head: headRefOid }`, with its number, title and URL in the status strip, and its body as the briefing of a PR group. They only work when `gh` is installed and logged in; otherwise the PR list is hidden, not an error.
@@ -88,18 +88,14 @@ enum Target {
 - **Size:** warn above 500 changed files, and cap the diff so a branch that rewrote a vendored dir doesn't hang the UI (the existing 300-line hunk collapse still applies).
 - **Merges:** merge commits are skipped in BY COMMIT; their changes still show in the range diff.
 
-### Decisions needed before M10
+### Decisions (settled 2026-09-29)
 
-1. **Fetching PR heads.** A PR from someone else's branch, or one never fetched, has no local commits. Reading it needs `git fetch origin <head>`, which updates a remote-tracking ref, and CLAUDE.md says "never touch refs". Options:
-   - (a) Only review PRs whose head commit is already local, and show "fetch it first: `git fetch origin pull/42/head`".
-   - (b) Allow an explicit, confirmed fetch into a Debrief-only namespace (`refs/debrief/pr/42`), never local branches.
-   
-   **Recommended: (a) for M10, (b) later if it's missed.**
-2. **Keep `a` / `d` in range mode when `worktree: true`?** They'd act on the uncommitted part only. **Recommended: yes, uncommitted hunks only, with committed hunks read-only.**
+1. **PR heads that aren't local are not fetched.** Debrief never runs `git fetch`; such a PR shows "not fetched" and the command to run (`git fetch origin pull/42/head`, or the branch name for same-repo PRs). A Debrief-owned fetch into `refs/debrief/pr/*` stays a possible later addition.
+2. **`a` / `d` work on the uncommitted part of a checked-out branch.** In a range with `worktree: true`, staging and discarding apply to hunks past `head` only, exactly as in worktree mode; committed hunks can be marked but not staged or discarded.
 
 ### M8 — Review target + range diff
 **Prompt:**
-> Implement the Target from docs/PLAN.md "Branch & PR review": `git::diff` diffs merge-base(base, head) → head (optionally on to the worktree when head is checked out), with rename detection and the same hunk ids. Route status, diff_file, the flags scan and the review model through the current target; keep `apply` worktree-only. Key review state by target and store viewed oids from the head tree in range mode. Add base detection, `target_list` (worktree + local branches with ahead counts) and `target_set`, the `B` / `:target` picker, and the status strip and tape for branches. Disable `a` / `d` in range mode with a command-bar reason. Tests on temp repos: a branch with 3 commits against a base that moved on (only branch changes show); a rebase that keeps a hunk keeps its id and viewed mark; a new commit to a cleared file reopens it.
+> Implement the Target from docs/PLAN.md "Branch & PR review": `git::diff` diffs merge-base(base, head) → head (optionally on to the worktree when head is checked out), with rename detection and the same hunk ids. Route status, diff_file, the flags scan and the review model through the current target; `apply` (stage/discard) keeps working on the worktree part only (decision 2). Key review state by target and store viewed oids from the head tree in range mode. Add base detection, `target_list` (worktree + local branches with ahead counts) and `target_set`, the `B` / `:target` picker, and the status strip and tape for branches. In a range, `a` / `d` act on uncommitted hunks only and explain in the command bar when the hunk under the cursor is committed (decision 2). Tests on temp repos: a branch with 3 commits against a base that moved on (only branch changes show); a rebase that keeps a hunk keeps its id and viewed mark; a new commit to a cleared file reopens it.
 
 Done when: I can pick a local feature branch and review everything it changed since it left main, and switch back to the worktree without losing either review's progress.
 
@@ -111,7 +107,7 @@ Done when: a branch built over two Claude sessions shows its files under the rig
 
 ### M10 — Pull requests
 **Prompt:**
-> Add open PRs to the target picker via `gh pr list/view --json …` (read-only; hidden when gh is missing or logged out). A PR is a range from its base to its head commit; show number, title and URL in the status strip and its body as a PR briefing group. Apply decision 1 from the plan (PR heads not available locally show the fetch command instead of a diff). Tests mock `gh` with a fixture script on PATH.
+> Add open PRs to the target picker via `gh pr list/view --json …` (read-only; hidden when gh is missing or logged out). A PR is a range from its base to its head commit; show number, title and URL in the status strip and its body as a PR briefing group. Per decision 1, never fetch: a PR whose head commit isn't local shows "not fetched" and the `git fetch` command to run instead of a diff. Tests mock `gh` with a fixture script on PATH.
 
 Done when: I can open a Claude-authored PR from the palette, review it with intent groups and flags, and send notes to the session that wrote it.
 
