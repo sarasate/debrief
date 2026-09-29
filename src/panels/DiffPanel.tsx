@@ -15,7 +15,7 @@ import type { DiffHunk, DiffLine, Verdict } from "../lib/types";
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
 const toolBtn =
-  "h-[30px] px-[9px] border border-hud/[.22] bg-transparent text-ink-base text-[11px] disabled:opacity-40";
+  "flex-none whitespace-nowrap h-[30px] px-[9px] border border-hud/[.22] bg-transparent text-ink-base text-[11px] disabled:opacity-40";
 
 export function DiffPanel() {
   const path = useUI((s) => s.selectedPath);
@@ -57,13 +57,14 @@ export function DiffPanel() {
       bg="bg-bg-panelDeep"
       toolbar={
         <>
-          <span className="min-w-0 text-[11.5px] whitespace-nowrap overflow-hidden text-ellipsis">
-            <span className="text-ink-faint">{dirs.length ? dirs.join("/") + "/" : ""}</span>
-            <span className="text-hud">{name}</span>
+          {/* The folder gives way before the file name does. */}
+          <span title={path ?? undefined} className="min-w-0 flex overflow-hidden text-[11.5px] whitespace-nowrap">
+            <span className="min-w-0 shrink-[100] text-ink-faint overflow-hidden text-ellipsis">{dirs.length ? dirs.join("/") + "/" : ""}</span>
+            <span className="min-w-0 shrink text-hud overflow-hidden text-ellipsis">{name}</span>
           </span>
           {file && <StatusChip status={file.status} inline />}
           <span className="flex-1" />
-          <span className="text-[10.5px] tracking-[0.12em] text-ink-faint whitespace-nowrap">{position}</span>
+          <span className="flex-none text-[10.5px] tracking-[0.12em] text-ink-faint whitespace-nowrap">{position}</span>
           <button
             type="button"
             aria-label="Previous file"
@@ -80,7 +81,7 @@ export function DiffPanel() {
           >
             <span className="text-hud">{keyFor("file.next").toUpperCase()}</span> ↓
           </button>
-          <label className="h-[30px] flex items-center gap-[7px] px-[10px] border border-hud/[.22] text-[10.5px] tracking-[0.12em] text-ink-base cursor-pointer has-[:disabled]:opacity-40">
+          <label className="flex-none whitespace-nowrap h-[30px] flex items-center gap-[7px] px-[10px] border border-hud/[.22] text-[10.5px] tracking-[0.12em] text-ink-base cursor-pointer has-[:disabled]:opacity-40">
             <input
               type="checkbox"
               disabled={!file}
@@ -94,7 +95,7 @@ export function DiffPanel() {
             type="button"
             disabled={!file}
             onClick={() => void runAction("file.clear", qc)}
-            className="h-[30px] px-3 border-0 bg-hud text-ink-void font-chrome font-bold tracking-[0.14em] text-[11px] shadow-[0_0_18px_color-mix(in_srgb,var(--ac)_40%,transparent)] disabled:opacity-40"
+            className="flex-none whitespace-nowrap h-[30px] px-3 border-0 bg-hud text-ink-void font-chrome font-bold tracking-[0.14em] text-[11px] shadow-[0_0_18px_color-mix(in_srgb,var(--ac)_40%,transparent)] disabled:opacity-40"
           >
             SPC · CLEAR &amp; NEXT
           </button>
@@ -220,7 +221,7 @@ function Notice({ text, danger = false }: { text: string; danger?: boolean }) {
   );
 }
 
-const verdictBtn = "dc-hov h-7 px-[10px] text-[10.5px] tracking-[0.14em] border";
+const verdictBtn = "dc-hov flex-none whitespace-nowrap h-7 px-[10px] text-[10.5px] tracking-[0.14em] border";
 const VERDICT_OFF = "border-hud/20 bg-transparent text-ink-dim";
 const KEEP_ON = "border-sig-okDark bg-sig-okDark/[.22] text-sig-ok";
 const REVERT_ON = "border-sig-dangerDark bg-sig-dangerDark/[.22] text-sig-deleteHi";
@@ -263,7 +264,7 @@ function Hunk({ path, hunk, current, verdict }: { path: string; hunk: DiffHunk; 
         </span>
         <span className="flex-1" />
         {verdict === "revert" && (
-          <span className="text-[10px] tracking-[0.16em] text-sig-danger whitespace-nowrap">MARKED FOR DISCARD</span>
+          <span className="flex-none text-[10px] tracking-[0.16em] text-sig-danger whitespace-nowrap">MARKED FOR DISCARD</span>
         )}
         <button type="button" onClick={decide("hunk.keep")} className={`${verdictBtn} ${verdict === "keep" ? KEEP_ON : VERDICT_OFF}`}>
           <span className="font-bold">Y</span> KEEP
