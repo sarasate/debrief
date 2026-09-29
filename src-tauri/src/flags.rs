@@ -261,7 +261,7 @@ mod tests {
     fn scan(lines: &[&str]) -> ContentScan {
         ContentScan {
             added: lines.iter().enumerate().map(|(i, t)| (i as u32 + 1, t.to_string())).collect(),
-            old_blob: None,
+            ..Default::default()
         }
     }
 

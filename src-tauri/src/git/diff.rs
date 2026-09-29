@@ -71,6 +71,11 @@ pub fn diff_file(state: &RepoState, path: &str) -> AppResult<FileDiff> {
     Err(AppError::Input(format!("{path} has no uncommitted changes")))
 }
 
+/// Ids of every hunk in `patch`, exactly as `diff_file` reports them.
+pub(crate) fn hunk_ids(patch: &Patch, path: &str) -> AppResult<Vec<String>> {
+    Ok(collect_hunks(patch, path)?.into_iter().map(|h| h.id).collect())
+}
+
 fn collect_hunks(patch: &Patch, path: &str) -> AppResult<Vec<DiffHunk>> {
     let mut hunks = Vec::with_capacity(patch.num_hunks());
     let mut seen: HashMap<Vec<u8>, u32> = HashMap::new();

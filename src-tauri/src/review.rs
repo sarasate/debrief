@@ -1,11 +1,12 @@
 //! The review model (SPEC §7): the changed files grouped by intent, with
-//! noise and flags. Review state joins in M4.
+//! noise, flags and review state.
 
 use crate::error::AppResult;
 use crate::flags::{evaluate, is_test_path, FileFacts, Flag};
 use crate::git::status::ContentScan;
 use crate::git::types::{ChangedFile, FileStatus, RepoStatus};
 use crate::noise::{Noise, NoiseConfig};
+use crate::review_state::{Current, ReviewStore, Verdict, NO_SESSION};
 use crate::state::RepoState;
 use crate::transcript::parse::ParsedSession;
 use crate::transcript::sessions::{list_sessions, SessionInfo, TranscriptCache};
@@ -67,9 +68,15 @@ pub struct ReviewModel {
     /// Turns in prompt order, then UNATTRIBUTED, then GENERATED; empty
     /// groups are left out.
     pub groups: Vec<IntentGroup>,
-    /// Noise and flags per changed path.
+    /// Noise, flags and review state per changed path.
     pub files: BTreeMap<String, FileMeta>,
     pub noise: NoiseConfig,
+    /// hunk id -> verdict, for hunks that still exist.
+    pub verdicts: BTreeMap<String, Verdict>,
+    /// Files whose viewed mark this refresh dropped because they changed.
+    pub invalidated: Vec<String>,
+    /// Which state file the progress lives in: the session id or "worktree".
+    pub state_key: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -77,12 +84,18 @@ pub struct ReviewModel {
 pub struct FileMeta {
     pub noise: bool,
     pub flags: Vec<Flag>,
+    pub viewed: bool,
+    /// Worktree blob oid; sent back with "viewed" so a change made after
+    /// the reviewer looked still invalidates the mark.
+    pub oid: String,
+    pub hunk_ids: Vec<String>,
 }
 
 /// `session_id` None picks the most recently written session.
 pub fn review_model(
     state: &RepoState,
     cache: &TranscriptCache,
+    store: &ReviewStore,
     projects: Option<&Path>,
     session_id: Option<&str>,
 ) -> AppResult<ReviewModel> {
@@ -114,6 +127,23 @@ pub fn review_model(
     } else {
         BTreeSet::new()
     };
+    let state_key = chosen.map_or(NO_SESSION, |s| s.0.id.as_str()).to_string();
+    let current: Vec<Current> = status
+        .files
+        .iter()
+        .map(|f| {
+            let sc = scans.get(&f.path);
+            Current {
+                path: &f.path,
+                oid: sc.map_or("deleted", |s| s.worktree_oid.as_str()),
+                hunk_ids: sc.map_or(&[], |s| s.hunk_ids.as_slice()),
+            }
+        })
+        .collect();
+    let (review, invalidated) = store.update(repo.path(), &state_key, |s| {
+        let inv = s.reconcile(&current);
+        (s.clone(), inv)
+    })?;
     let files = status
         .files
         .iter()
@@ -127,12 +157,22 @@ pub fn review_model(
                 unattributed: unattributed.contains(f.path.as_str()),
                 old_lines: old_line_count(&repo, f, scan),
             };
-            (f.path.clone(), FileMeta { noise: is_noise, flags: evaluate(&facts) })
+            let meta = FileMeta {
+                noise: is_noise,
+                flags: evaluate(&facts),
+                viewed: review.viewed.contains_key(&f.path),
+                oid: scan.map_or_else(|| "deleted".into(), |s| s.worktree_oid.clone()),
+                hunk_ids: scan.map(|s| s.hunk_ids.clone()).unwrap_or_default(),
+            };
+            (f.path.clone(), meta)
         })
         .collect();
     Ok(ReviewModel {
         files,
         noise: noise_config,
+        verdicts: review.verdicts,
+        invalidated,
+        state_key,
         groups,
         turns: parsed
             .map(|p| p.turns.iter().map(|t| TurnRef { index: t.index, title: short_title(&t.prompt) }).collect())
@@ -462,7 +502,7 @@ mod tests {
         fx.write(".debrief.toml", "[noise]\nextra = [\"gen/**\"]\n");
 
         let cache = TranscriptCache::new();
-        let m = review_model(&fx.state(), &cache, None, None).unwrap();
+        let m = review_model(&fx.state(), &cache, &ReviewStore::new(), None, None).unwrap();
         let kinds = |p: &str| m.files[p].flags.iter().map(|f| f.kind).collect::<Vec<_>>();
         use crate::flags::FlagKind::*;
         assert_eq!(kinds("src/a.ts"), [Marker], "no session, so no rule 1");
@@ -473,6 +513,51 @@ mod tests {
         assert!(!m.files[".debrief.toml"].noise);
         assert_eq!(m.noise.source, crate::noise::ConfigSource::File);
         assert_eq!(m.groups.last().unwrap().kind, GroupKind::Generated);
+    }
+
+    /// SPEC §4 through the real model: viewed survives a refresh, is dropped
+    /// once when the file changes, and verdicts follow their hunk ids.
+    #[test]
+    fn review_state_survives_refresh_and_invalidates_on_change() {
+        use crate::git::fixture::Fixture;
+        use crate::review_state::Verdict;
+        let fx = Fixture::new();
+        let base: String = (1..=40).map(|i| format!("line {i}\n")).collect();
+        fx.commit(&[("a.ts", &base), ("b.ts", "b\n")]);
+        fx.write("a.ts", &base.replace("line 3\n", "top\n").replace("line 35\n", "bottom\n"));
+        fx.write("b.ts", "b2\n");
+        let (cache, store, state) = (TranscriptCache::new(), ReviewStore::new(), fx.state());
+        let model = || review_model(&state, &cache, &store, None, None).unwrap();
+
+        let m = model();
+        assert_eq!(m.state_key, NO_SESSION);
+        let a = &m.files["a.ts"];
+        assert_eq!(a.hunk_ids.len(), 2);
+        let from_diff: Vec<_> = crate::git::diff::diff_file(&state, "a.ts").unwrap().hunks.into_iter().map(|h| h.id).collect();
+        assert_eq!(a.hunk_ids, from_diff, "model and diff_file agree on ids");
+        assert!(!fx.repo.path().join("debrief").exists(), "reading writes nothing");
+
+        let git = fx.repo.path();
+        store
+            .update(git, NO_SESSION, |s| {
+                s.viewed.insert("a.ts".into(), a.oid.clone());
+                s.viewed.insert("b.ts".into(), m.files["b.ts"].oid.clone());
+                s.verdicts.insert(a.hunk_ids[0].clone(), Verdict::Keep);
+                s.verdicts.insert(a.hunk_ids[1].clone(), Verdict::Revert);
+            })
+            .unwrap();
+        let m = model();
+        assert!(m.files["a.ts"].viewed && m.files["b.ts"].viewed);
+        assert_eq!(m.verdicts.len(), 2);
+        assert!(m.invalidated.is_empty());
+
+        // Rewrite only the lower hunk of a.ts.
+        fx.write("a.ts", &base.replace("line 3\n", "top\n").replace("line 35\n", "bottom, again\n"));
+        let m = model();
+        assert_eq!(m.invalidated, ["a.ts"]);
+        assert!(!m.files["a.ts"].viewed && m.files["b.ts"].viewed);
+        assert_eq!(m.verdicts.values().collect::<Vec<_>>(), [&Verdict::Keep], "the rewritten hunk's verdict is gone");
+        assert!(model().invalidated.is_empty(), "reported once");
     }
 
     #[test]

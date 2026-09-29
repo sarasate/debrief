@@ -3,6 +3,7 @@ mod flags;
 mod git;
 mod noise;
 mod review;
+mod review_state;
 mod settings;
 mod state;
 mod transcript;
@@ -11,6 +12,7 @@ mod watcher;
 use error::{AppError, AppResult};
 use git::types::*;
 use review::ReviewModel;
+use review_state::{ReviewStore, Verdict, NO_SESSION};
 use settings::SettingsStore;
 use transcript::sessions::{list_sessions, SessionInfo, TranscriptCache};
 use transcript::{projects_dir, repo_roots, slug, Ledger};
@@ -95,8 +97,55 @@ fn review_model(
     session_id: Option<String>,
     state: State<RepoState>,
     cache: State<TranscriptCache>,
+    store: State<ReviewStore>,
 ) -> AppResult<ReviewModel> {
-    review::review_model(&state, &cache, projects_dir().as_deref(), session_id.as_deref())
+    review::review_model(&state, &cache, &store, projects_dir().as_deref(), session_id.as_deref())
+}
+
+/// Mark a file viewed at the blob oid the reviewer saw (`oid`, from the
+/// model), or unmark it. `session_id` is the model's `stateKey`.
+#[tauri::command]
+fn review_set_viewed(
+    session_id: Option<String>,
+    path: String,
+    oid: Option<String>,
+    viewed: bool,
+    state: State<RepoState>,
+    store: State<ReviewStore>,
+) -> AppResult<()> {
+    let repo = state.open()?;
+    let key = session_id.unwrap_or_else(|| NO_SESSION.into());
+    let oid = match oid {
+        Some(o) => o,
+        None => git::status::worktree_oid(&state.path()?, &path),
+    };
+    store.update(repo.path(), &key, |s| {
+        if viewed {
+            s.viewed.insert(path, oid);
+        } else {
+            s.viewed.remove(&path);
+        }
+    })
+}
+
+#[tauri::command]
+fn review_set_verdict(
+    session_id: Option<String>,
+    hunk_id: String,
+    verdict: Option<Verdict>,
+    state: State<RepoState>,
+    store: State<ReviewStore>,
+) -> AppResult<()> {
+    let repo = state.open()?;
+    let key = session_id.unwrap_or_else(|| NO_SESSION.into());
+    store.update(repo.path(), &key, |s| match verdict {
+        Some(v) => {
+            s.verdicts.insert(hunk_id, v);
+        }
+        None => {
+            s.verdicts.remove(&hunk_id);
+        }
+    })
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -106,6 +155,7 @@ pub fn run() {
         .manage(RepoState::new())
         .manage(RepoWatcher::new())
         .manage(TranscriptCache::new())
+        .manage(ReviewStore::new())
         .setup(|app| {
             let dir = app
                 .path()
@@ -130,6 +180,8 @@ pub fn run() {
             sessions_list,
             ledger_load,
             review_model,
+            review_set_viewed,
+            review_set_verdict,
         ])
         .run(tauri::generate_context!());
     if let Err(e) = result {

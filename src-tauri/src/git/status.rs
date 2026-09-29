@@ -2,7 +2,7 @@ use super::diff::{delta_paths, delta_status, worktree_diff};
 use super::types::*;
 use crate::error::{AppError, AppResult};
 use crate::state::RepoState;
-use git2::{Oid, Patch, Repository};
+use git2::{ObjectType, Oid, Patch, Repository};
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
@@ -28,6 +28,19 @@ pub struct ContentScan {
     pub added: Vec<(u32, String)>,
     /// The HEAD blob, for the test-shrink rule.
     pub old_blob: Option<Oid>,
+    /// What the file on disk hashes to now; review state keys "viewed" on it.
+    pub worktree_oid: String,
+    /// Hunk ids, as `diff_file` reports them.
+    pub hunk_ids: Vec<String>,
+}
+
+/// Blob oid of the worktree file, or "deleted" when it's gone. Viewed marks
+/// store this, so any later write to the file invalidates them (SPEC §4).
+pub fn worktree_oid(workdir: &Path, path: &str) -> String {
+    match Oid::hash_file(ObjectType::Blob, workdir.join(path)) {
+        Ok(oid) => oid.to_string(),
+        Err(_) => "deleted".into(),
+    }
 }
 
 pub fn repo_status(state: &RepoState) -> AppResult<RepoStatus> {
@@ -66,9 +79,14 @@ fn scan(repo: &Repository, content: bool) -> AppResult<(RepoStatus, HashMap<Stri
         };
         if content {
             let old = delta.old_file().id();
-            let mut sc = ContentScan { added: vec![], old_blob: (!old.is_zero()).then_some(old) };
+            let mut sc = ContentScan {
+                old_blob: (!old.is_zero()).then_some(old),
+                worktree_oid: worktree_oid(&workdir, &path),
+                ..Default::default()
+            };
             if let (Some(p), false) = (&patch, is_binary) {
                 collect_added(p, &mut sc.added)?;
+                sc.hunk_ids = super::diff::hunk_ids(p, &path)?;
             }
             scans.insert(path.clone(), sc);
         }
