@@ -4,6 +4,8 @@ A desktop app for reviewing what a Claude Code session changed in your working t
 
 Debrief reads the repo's uncommitted changes and the session's transcript under `~/.claude/projects`, groups the files by the prompt that produced them, flags what needs a closer look, and lets you clear files, keep or revert hunks, stage what you cleared and send one batch of notes back to Claude. Review state lives in `.git/debrief/`, never in the working tree.
 
+![Debrief reviewing a Claude Code session: files grouped by the prompt that changed them, the agent's briefing and a flag above the diff, review progress and a queued note](docs/screenshots/review.png)
+
 ## Features
 
 - **Grouped by intent.** Files are grouped by the prompt that changed them. Your own edits show under UNATTRIBUTED, and lockfiles and generated files are masked.
@@ -11,6 +13,22 @@ Debrief reads the repo's uncommitted changes and the session's transcript under 
 - **Keyboard review.** Clear a file and jump to the next open one, keep or revert single hunks. A cleared file goes back to open when it changes again.
 - **Stage and discard.** Stage cleared files without the hunks you marked for revert; discard reverted hunks from the working tree after a confirmation.
 - **Notes back to Claude.** Write notes on files or hunks and send them as one prompt: to the clipboard, to `.git/debrief/feedback.md`, or straight into the session with `claude --resume`.
+
+## Screenshots
+
+**File tree, with a kept hunk and a hunk marked for revert (dimmed)**
+
+![File tree view with one hunk kept and one marked for revert](docs/screenshots/tree.png)
+
+**Discard asks first and lists every hunk it will rewrite**
+
+![Discard confirmation listing the reverted hunk](docs/screenshots/discard.png)
+
+**Boot**
+
+![Boot sequence: repository linked, session found, ledger parsed, flags scanned](docs/screenshots/boot.png)
+
+<sub>The repo and session in these screenshots are a made-up demo.</sub>
 
 ## Install
 
