@@ -33,6 +33,9 @@ pub struct ReviewState {
     pub transmitted: Vec<Transmission>,
     /// Hunks `d` discarded, so the next transmit can tell Claude.
     pub discarded: Vec<DiscardRecord>,
+    /// Branch review: committed hunks marked revert that a transmit already
+    /// asked Claude to revert, so each request is sent once.
+    pub requested: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]

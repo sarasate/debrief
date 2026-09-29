@@ -1,6 +1,7 @@
 //! The review model (SPEC §7): the changed files grouped by intent, with
 //! noise, flags and review state.
 
+use crate::branch::BranchCommit;
 use crate::error::AppResult;
 use crate::flags::{evaluate, is_test_path, FileFacts, Flag};
 use crate::git::status::ContentScan;
@@ -15,7 +16,7 @@ use crate::transcript::sessions::{list_sessions, SessionInfo, TranscriptCache};
 use crate::transcript::{EditTool, Turn};
 use serde::Serialize;
 use git2::Repository;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
 const TITLE_WORDS: usize = 6;
@@ -26,6 +27,10 @@ const MAX_SESSION_COMMITS: usize = 200;
 #[serde(rename_all = "camelCase")]
 pub enum GroupKind {
     Turn,
+    /// BY COMMIT, or (BY INTENT) a Claude-trailer commit no transcript covers.
+    Commit,
+    /// BY COMMIT: changes past the branch tip, in the working tree.
+    Uncommitted,
     Unattributed,
     Generated,
 }
@@ -37,7 +42,16 @@ pub struct GroupFile {
     /// Edit tools used on this file in the group's turn.
     pub tools: Vec<EditTool>,
     /// Earlier turns that also edited this file.
-    pub also_turns: Vec<usize>,
+    pub also_turns: Vec<TurnKey>,
+    /// BY COMMIT: earlier commits on the branch that also changed it.
+    pub also_commits: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TurnKey {
+    pub session_id: String,
+    pub index: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -50,11 +64,32 @@ pub struct IntentGroup {
     pub turn: Option<usize>,
     pub prompt: Option<String>,
     pub files: Vec<GroupFile>,
+    /// The session a turn group comes from.
+    pub session_id: Option<String>,
+    /// The commit a commit group stands for.
+    pub commit: Option<CommitRef>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitRef {
+    pub sha: String,
+    pub short: String,
+    pub author: String,
+    pub time: i64,
+    pub claude: bool,
+}
+
+impl From<&BranchCommit> for CommitRef {
+    fn from(c: &BranchCommit) -> Self {
+        Self { sha: c.sha.clone(), short: c.short.clone(), author: c.author.clone(), time: c.time, claude: c.claude }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TurnRef {
+    pub session_id: String,
     pub index: usize,
     pub title: String,
 }
@@ -85,6 +120,11 @@ pub struct ReviewModel {
     pub unreported_discards: usize,
     /// The branch under review; None for the working tree.
     pub range: Option<Range>,
+    /// BY COMMIT groups; empty in a worktree review.
+    pub commit_groups: Vec<IntentGroup>,
+    /// Branch review: committed hunks marked revert that the next transmit
+    /// will ask Claude to revert.
+    pub pending_requests: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -119,21 +159,44 @@ pub fn review_model(
         Some(p) => list_sessions(cache, p, &roots)?,
         None => vec![],
     };
-    let chosen = session_id
-        .and_then(|id| sessions.iter().find(|s| s.0.id == id))
-        .or_else(|| sessions.first());
     let (noise, noise_config) = crate::noise::load(&workdir)?;
-    let parsed = chosen.map(|s| s.1.as_ref());
-    // Committed work can't explain what is dirty in the worktree, so it is
-    // dropped there; in a branch review committed work is the point.
-    let pending = match (parsed, &range) {
-        (Some(p), None) => Some(drop_committed(p, &committed_since(&repo, p)?)),
-        (Some(p), Some(_)) => Some(p.clone()),
-        (None, _) => None,
+    // Which sessions and edits explain the changes. Worktree: the chosen
+    // session, minus work a later commit already holds. Branch: every
+    // session's edits since the branch left its base, plus Claude-trailer
+    // commits for what no transcript covers.
+    let (attributed, commits, chosen): (Vec<ParsedSession>, Vec<BranchCommit>, Option<usize>) = match &range {
+        None => {
+            let chosen = session_id
+                .and_then(|id| sessions.iter().position(|s| s.0.id == id))
+                .or(if sessions.is_empty() { None } else { Some(0) });
+            let pending = match chosen {
+                Some(i) => vec![drop_committed(&sessions[i].1, &committed_since(&repo, &sessions[i].1)?)],
+                None => vec![],
+            };
+            (pending, vec![], chosen)
+        }
+        Some(r) => {
+            let since = repo.find_commit(r.merge_base_oid()?)?.time().seconds();
+            let all: Vec<&ParsedSession> = sessions.iter().map(|s| s.1.as_ref()).collect();
+            let mut kept = crate::branch::filter_sessions(&all, r, since);
+            // Oldest session first, so S1 is where the branch started.
+            kept.sort_by(|a, b| a.started_at.cmp(&b.started_at));
+            let newest = kept.iter().max_by(|a, b| a.last_edit_at().cmp(&b.last_edit_at())).map(|p| p.id.clone());
+            let chosen = session_id
+                .map(String::from)
+                .or(newest)
+                .and_then(|id| sessions.iter().position(|s| s.0.id == id))
+                .or(if sessions.is_empty() { None } else { Some(0) });
+            (kept, crate::branch::commits(&repo, r)?, chosen)
+        }
     };
-    let groups = group(&status.files, pending.as_ref(), &noise);
-    // Without a session every file is unattributed, which says nothing.
-    let unattributed: BTreeSet<&str> = if pending.is_some() {
+    let chosen = chosen.map(|i| &sessions[i]);
+    let refs: Vec<&ParsedSession> = attributed.iter().collect();
+    let groups = group(&status.files, &refs, &noise, &commits);
+    // Without any Claude session or commit every file is unattributed,
+    // which says nothing.
+    let has_claude = !refs.is_empty() || commits.iter().any(|c| c.claude);
+    let unattributed: BTreeSet<&str> = if has_claude {
         groups
             .iter()
             .filter(|g| g.kind == GroupKind::Unattributed)
@@ -173,6 +236,25 @@ pub fn review_model(
         let inv = s.reconcile(&current);
         (s.clone(), inv)
     })?;
+    let pending_requests = match &uncommitted {
+        Some(u) => scans
+            .iter()
+            .flat_map(|(p, sc)| sc.hunk_ids.iter().map(move |id| (p, id)))
+            .filter(|(p, id)| {
+                review.verdicts.get(*id) == Some(&Verdict::Revert)
+                    && !review.requested.contains(id)
+                    && !u.get(*p).is_some_and(|ids| ids.contains(id))
+            })
+            .count(),
+        None => 0,
+    };
+    let commit_groups = match (&range, &uncommitted) {
+        (Some(_), Some(u)) => {
+            let pending: HashSet<String> = u.iter().filter(|(_, ids)| !ids.is_empty()).map(|(p, _)| p.clone()).collect();
+            commit_groups(&status.files, &commits, &noise, &pending)
+        }
+        _ => vec![],
+    };
     let files = status
         .files
         .iter()
@@ -206,9 +288,12 @@ pub fn review_model(
         invalidated,
         state_key,
         groups,
-        turns: parsed
-            .map(|p| p.turns.iter().map(|t| TurnRef { index: t.index, title: short_title(&t.prompt) }).collect())
-            .unwrap_or_default(),
+        turns: attributed
+            .iter()
+            .flat_map(|p| p.turns.iter().map(|t| TurnRef { session_id: p.id.clone(), index: t.index, title: short_title(&t.prompt) }))
+            .collect(),
+        commit_groups,
+        pending_requests,
         session: chosen.map(|s| s.0.clone()),
         status,
         range,
@@ -267,44 +352,81 @@ fn drop_committed(session: &ParsedSession, committed: &HashMap<String, i64>) -> 
     s
 }
 
-pub fn group(files: &[ChangedFile], session: Option<&ParsedSession>, noise: &Noise) -> Vec<IntentGroup> {
-    let turns: &[Turn] = session.map_or(&[], |s| &s.turns);
+fn plain(path: &str) -> GroupFile {
+    GroupFile { path: path.to_string(), tools: vec![], also_turns: vec![], also_commits: vec![] }
+}
+
+fn fixed_group(id: &str, kind: GroupKind, title: &str, briefing: String, files: Vec<GroupFile>) -> IntentGroup {
+    IntentGroup {
+        id: id.into(),
+        kind,
+        title: title.into(),
+        briefing,
+        turn: None,
+        prompt: None,
+        files,
+        session_id: None,
+        commit: None,
+    }
+}
+
+/// BY INTENT: one group per turn (a file goes to its last turn), then
+/// commits Claude co-authored that no transcript covers, then UNATTRIBUTED
+/// and GENERATED. Turns from several sessions are ordered by prompt time
+/// and titled `S1 ·`, `S2 ·` … oldest session first.
+pub fn group(files: &[ChangedFile], sessions: &[&ParsedSession], noise: &Noise, commits: &[BranchCommit]) -> Vec<IntentGroup> {
+    // Every turn of every session, oldest prompt first.
+    let mut turns: Vec<(usize, &Turn)> = sessions.iter().enumerate().flat_map(|(si, s)| s.turns.iter().map(move |t| (si, t))).collect();
+    turns.sort_by(|a, b| a.1.timestamp.cmp(&b.1.timestamp).then(a.0.cmp(&b.0)).then(a.1.index.cmp(&b.1.index)));
+    let slot = |si: usize, turn: usize| turns.iter().position(|(s, t)| *s == si && t.index == turn);
     let mut by_turn: Vec<Vec<GroupFile>> = vec![vec![]; turns.len()];
+    let mut by_commit: Vec<Vec<GroupFile>> = vec![vec![]; commits.len()];
     let (mut unattributed, mut generated) = (vec![], vec![]);
 
     for f in files {
-        let plain = |path: &str| GroupFile { path: path.to_string(), tools: vec![], also_turns: vec![] };
         if noise.matches(&f.path) {
             generated.push(plain(&f.path));
             continue;
         }
         // A renamed file counts under either name.
-        let hits: Vec<_> = session
-            .map(|s| {
-                s.entries.iter().filter(|e| e.path == f.path || f.old_path.as_deref() == Some(e.path.as_str())).collect()
-            })
-            .unwrap_or_default();
-        let Some(last) = hits.iter().map(|e| e.turn).max() else {
-            unattributed.push(plain(&f.path));
+        let named = |p: &str| p == f.path || f.old_path.as_deref() == Some(p);
+        let hits: Vec<(usize, &crate::transcript::LedgerEntry)> = sessions
+            .iter()
+            .enumerate()
+            .flat_map(|(si, s)| s.entries.iter().filter(|e| named(&e.path)).map(move |e| (si, e)))
+            .collect();
+        let last = hits.iter().filter_map(|(si, e)| slot(*si, e.turn)).max();
+        let Some(last) = last else {
+            match commits.iter().rposition(|c| c.claude && c.paths.iter().any(|p| named(p))) {
+                Some(ci) => by_commit[ci].push(plain(&f.path)),
+                None => unattributed.push(plain(&f.path)),
+            }
             continue;
         };
-        let also: BTreeSet<usize> = hits.iter().map(|e| e.turn).filter(|t| *t != last).collect();
-        let tools: BTreeSet<EditTool> = hits.iter().filter(|e| e.turn == last).map(|e| e.tool).collect();
-        by_turn[last - 1].push(GroupFile {
+        let (lsi, lturn) = (turns[last].0, turns[last].1.index);
+        let also: BTreeSet<TurnKey> = hits
+            .iter()
+            .filter(|(si, e)| !(*si == lsi && e.turn == lturn))
+            .map(|(si, e)| TurnKey { session_id: sessions[*si].id.clone(), index: e.turn })
+            .collect();
+        let tools: BTreeSet<EditTool> = hits.iter().filter(|(si, e)| *si == lsi && e.turn == lturn).map(|(_, e)| e.tool).collect();
+        by_turn[last].push(GroupFile {
             path: f.path.clone(),
             tools: tools.into_iter().collect(),
             also_turns: also.into_iter().collect(),
+            also_commits: vec![],
         });
     }
 
+    let multi = sessions.len() > 1;
     let mut groups: Vec<IntentGroup> = turns
         .iter()
         .zip(by_turn)
         .filter(|(_, files)| !files.is_empty())
-        .map(|(t, files)| IntentGroup {
-            id: format!("turn-{}", t.index),
+        .map(|((si, t), files)| IntentGroup {
+            id: if multi { format!("turn-{}-{}", &sessions[*si].id, t.index) } else { format!("turn-{}", t.index) },
             kind: GroupKind::Turn,
-            title: short_title(&t.prompt),
+            title: if multi { format!("S{} · {}", si + 1, short_title(&t.prompt)) } else { short_title(&t.prompt) },
             briefing: if t.summary.is_empty() {
                 "Claude hasn't closed this turn with a message yet.".into()
             } else {
@@ -313,39 +435,117 @@ pub fn group(files: &[ChangedFile], session: Option<&ParsedSession>, noise: &Noi
             turn: Some(t.index),
             prompt: Some(t.prompt.clone()),
             files,
+            session_id: Some(sessions[*si].id.clone()),
+            commit: None,
         })
         .collect();
 
+    for (c, files) in commits.iter().zip(by_commit) {
+        if files.is_empty() {
+            continue;
+        }
+        groups.push(commit_group(c, files, "No transcript covers this commit, but its Co-Authored-By trailer says Claude wrote it."));
+    }
+
     if !unattributed.is_empty() {
-        let commands: usize = turns.iter().map(|t| t.commands.len()).sum();
-        let briefing = match session {
-            None => "No Claude Code session found for this repo, so none of these changes can be attributed.".into(),
-            Some(_) if commands > 0 => format!(
-                "No Edit or Write call in this session covers these files: your own edits, side effects of the {commands} Bash command{} Claude ran, or changes left by an earlier session.",
+        let commands: usize = turns.iter().map(|(_, t)| t.commands.len()).sum();
+        let which = if multi { "these sessions" } else { "this session" };
+        let briefing = match sessions.len() {
+            0 => "No Claude Code session found for this repo, so none of these changes can be attributed.".into(),
+            _ if commands > 0 => format!(
+                "No Edit or Write call in {which} covers these files: your own edits, side effects of the {commands} Bash command{} Claude ran, or changes left by an earlier session.",
                 if commands == 1 { "" } else { "s" }
             ),
-            Some(_) => "No Edit or Write call in this session covers these files: your own edits, or changes left by an earlier session.".into(),
+            _ => format!("No Edit or Write call in {which} covers these files: your own edits, or changes left by an earlier session."),
         };
-        groups.push(IntentGroup {
-            id: "unattributed".into(),
-            kind: GroupKind::Unattributed,
-            title: "UNATTRIBUTED".into(),
-            briefing,
-            turn: None,
-            prompt: None,
-            files: unattributed,
-        });
+        groups.push(fixed_group("unattributed", GroupKind::Unattributed, "UNATTRIBUTED", briefing, unattributed));
     }
     if !generated.is_empty() {
-        groups.push(IntentGroup {
-            id: "generated".into(),
-            kind: GroupKind::Generated,
-            title: "GENERATED & LOCKFILES".into(),
-            briefing: "Regenerated by tooling: lockfiles, codegen and build output. Usually safe to skim.".into(),
-            turn: None,
-            prompt: None,
-            files: generated,
-        });
+        groups.push(generated_group(generated));
+    }
+    groups
+}
+
+fn generated_group(files: Vec<GroupFile>) -> IntentGroup {
+    fixed_group(
+        "generated",
+        GroupKind::Generated,
+        "GENERATED & LOCKFILES",
+        "Regenerated by tooling: lockfiles, codegen and build output. Usually safe to skim.".into(),
+        files,
+    )
+}
+
+fn commit_group(c: &BranchCommit, files: Vec<GroupFile>, fallback: &str) -> IntentGroup {
+    let body = if c.body.is_empty() { fallback.to_string() } else { c.body.clone() };
+    IntentGroup {
+        id: format!("commit-{}", c.short),
+        kind: GroupKind::Commit,
+        title: format!("{} {}", c.short, c.subject).to_uppercase(),
+        briefing: body,
+        turn: None,
+        prompt: Some(c.subject.clone()),
+        files,
+        session_id: None,
+        commit: Some(CommitRef::from(c)),
+    }
+}
+
+/// BY COMMIT: one group per non-merge commit on the branch, oldest first; a
+/// file goes to the last commit that changed it, or to UNCOMMITTED when it
+/// also changed after the tip. GENERATED stays last.
+pub fn commit_groups(files: &[ChangedFile], commits: &[BranchCommit], noise: &Noise, uncommitted: &HashSet<String>) -> Vec<IntentGroup> {
+    let mut by_commit: Vec<Vec<GroupFile>> = vec![vec![]; commits.len()];
+    let (mut pending, mut other, mut generated) = (vec![], vec![], vec![]);
+    for f in files {
+        if noise.matches(&f.path) {
+            generated.push(plain(&f.path));
+            continue;
+        }
+        let named = |p: &String| *p == f.path || f.old_path.as_ref() == Some(p);
+        let touching: Vec<usize> = commits.iter().enumerate().filter(|(_, c)| c.paths.iter().any(named)).map(|(i, _)| i).collect();
+        if uncommitted.contains(&f.path) {
+            let mut g = plain(&f.path);
+            g.also_commits = touching.iter().map(|i| commits[*i].short.clone()).collect();
+            pending.push(g);
+            continue;
+        }
+        match touching.last() {
+            Some(&last) => {
+                let mut g = plain(&f.path);
+                g.also_commits = touching[..touching.len() - 1].iter().map(|i| commits[*i].short.clone()).collect();
+                by_commit[last].push(g);
+            }
+            // Only merges touched it.
+            None => other.push(plain(&f.path)),
+        }
+    }
+    let mut groups: Vec<IntentGroup> = commits
+        .iter()
+        .zip(by_commit)
+        .filter(|(_, fs)| !fs.is_empty())
+        .map(|(c, fs)| commit_group(c, fs, "No commit message body."))
+        .collect();
+    if !pending.is_empty() {
+        groups.push(fixed_group(
+            "uncommitted",
+            GroupKind::Uncommitted,
+            "UNCOMMITTED",
+            "Changed in the working tree on top of the branch tip. Stage and discard reach these.".into(),
+            pending,
+        ));
+    }
+    if !other.is_empty() {
+        groups.push(fixed_group(
+            "merged",
+            GroupKind::Unattributed,
+            "FROM MERGES",
+            "Changed only by merge commits on the branch.".into(),
+            other,
+        ));
+    }
+    if !generated.is_empty() {
+        groups.push(generated_group(generated));
     }
     groups
 }
@@ -395,7 +595,7 @@ mod tests {
         let s = variants();
         let files: Vec<_> =
             ["mine.ts", "nb.ipynb", "pnpm-lock.yaml", "src/a.ts", "src/c.ts", "src/sub.ts"].map(file).into();
-        let groups = group(&files, Some(&s), &Noise::defaults().unwrap());
+        let groups = group(&files, &[&s], &Noise::defaults().unwrap(), &[]);
         assert_eq!(
             summary(&groups),
             [
@@ -409,7 +609,7 @@ mod tests {
         assert_eq!(t2.title, "SECOND PROMPT: TIDY TESTS");
         assert_eq!(t2.briefing, "Tests tidied.");
         let a = t2.files.iter().find(|f| f.path == "src/a.ts").unwrap();
-        assert_eq!(a.also_turns, [1], "edited in turn 1 too, belongs to its last turn");
+        assert_eq!(a.also_turns.iter().map(|t| t.index).collect::<Vec<_>>(), [1], "edited in turn 1 too, belongs to its last turn");
         assert_eq!(a.tools, [EditTool::Edit]);
         assert!(groups[2].briefing.contains("1 Bash command Claude ran"), "{}", groups[2].briefing);
     }
@@ -419,21 +619,21 @@ mod tests {
         let s = variants();
         let mut f = file("src/renamed.ts");
         f.old_path = Some("src/c.ts".into());
-        let groups = group(&[f], Some(&s), &Noise::defaults().unwrap());
+        let groups = group(&[f], &[&s], &Noise::defaults().unwrap(), &[]);
         assert_eq!(summary(&groups), [("turn-2".to_string(), vec!["src/renamed.ts"])]);
     }
 
     #[test]
     fn claude_written_noise_is_still_generated() {
         let s = variants();
-        let groups = group(&[file("src/a.ts"), file("dist/a.js")], Some(&s), &Noise::defaults().unwrap());
+        let groups = group(&[file("src/a.ts"), file("dist/a.js")], &[&s], &Noise::defaults().unwrap(), &[]);
         assert_eq!(groups.last().unwrap().id, "generated");
         assert_eq!(groups.last().unwrap().files[0].path, "dist/a.js");
     }
 
     #[test]
     fn without_a_session_everything_is_unattributed() {
-        let groups = group(&[file("a.ts"), file("Cargo.lock")], None, &Noise::defaults().unwrap());
+        let groups = group(&[file("a.ts"), file("Cargo.lock")], &[], &Noise::defaults().unwrap(), &[]);
         assert_eq!(
             summary(&groups),
             [("unattributed".to_string(), vec!["a.ts"]), ("generated".to_string(), vec!["Cargo.lock"])]
@@ -461,9 +661,10 @@ mod tests {
             tool: EditTool::Write,
             timestamp: iso(at),
             turn: 1,
+            branch: None,
         };
         let mut s = ParsedSession::default();
-        s.turns.push(Turn { index: 1, prompt: "p".into(), summary: String::new(), files: vec![], timestamp: iso(now - 60), commands: vec![] });
+        s.turns.push(Turn { index: 1, prompt: "p".into(), summary: String::new(), files: vec![], timestamp: iso(now - 60), commands: vec![], branch: None });
         // a.ts edited again after the commit; b.ts only before it.
         s.entries = vec![entry("a.ts", now - 60), entry("b.ts", now - 60), entry("a.ts", now + 60)];
 
@@ -472,7 +673,7 @@ mod tests {
         let paths: Vec<_> = pending.entries.iter().map(|e| e.path.as_str()).collect();
         assert_eq!(paths, ["a.ts"]);
 
-        let groups = group(&[file("a.ts"), file("b.ts")], Some(&pending), &Noise::defaults().unwrap());
+        let groups = group(&[file("a.ts"), file("b.ts")], &[&pending], &Noise::defaults().unwrap(), &[]);
         assert_eq!(summary(&groups), [("turn-1".into(), vec!["a.ts"]), ("unattributed".into(), vec!["b.ts"])]);
     }
 

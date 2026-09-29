@@ -51,6 +51,11 @@ impl Fixture {
 
     /// Write, stage and commit `files` on top of HEAD.
     pub fn commit(&self, files: &[(&str, &str)]) {
+        self.commit_msg(files, "fixture");
+    }
+
+    /// `commit` with a message (subject, body, trailers).
+    pub fn commit_msg(&self, files: &[(&str, &str)], message: &str) {
         for (rel, content) in files {
             self.write(rel, content);
             self.stage(rel);
@@ -61,7 +66,7 @@ impl Fixture {
         let parent = self.repo.head().ok().and_then(|h| h.peel_to_commit().ok());
         let parents: Vec<_> = parent.iter().collect();
         self.repo
-            .commit(Some("HEAD"), &sig, &sig, "fixture", &tree, &parents)
+            .commit(Some("HEAD"), &sig, &sig, message, &tree, &parents)
             .unwrap();
     }
 

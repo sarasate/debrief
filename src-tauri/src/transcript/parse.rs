@@ -41,6 +41,7 @@ struct PendingEdit {
     cwd: PathBuf,
     timestamp: String,
     turn: usize,
+    branch: Option<String>,
 }
 
 #[derive(Default)]
@@ -73,6 +74,7 @@ impl Collector {
                 cwd: cwd.to_path_buf(),
                 timestamp: ts.to_string(),
                 turn,
+                branch: git_branch(v),
             });
         }
         commands
@@ -124,6 +126,7 @@ pub fn parse_session(main: &str, subagents: &[String], roots: &[PathBuf]) -> Par
                             files: vec![],
                             timestamp: ts.to_string(),
                             commands: vec![],
+                            branch: git_branch(&v),
                         });
                     }
                 }
@@ -181,11 +184,12 @@ pub fn parse_session(main: &str, subagents: &[String], roots: &[PathBuf]) -> Par
             files: vec![],
             timestamp: s.started_at.clone().unwrap_or_default(),
             commands: vec![],
+            branch: None,
         });
     }
     for e in edits {
         let Some(path) = repo_rel(&e.file, &e.cwd, roots) else { continue };
-        s.entries.push(LedgerEntry { path, tool: e.tool, timestamp: e.timestamp, turn: e.turn.max(1) });
+        s.entries.push(LedgerEntry { path, tool: e.tool, timestamp: e.timestamp, turn: e.turn.max(1), branch: e.branch });
     }
     s.entries.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
     for e in &s.entries {
@@ -199,6 +203,12 @@ pub fn parse_session(main: &str, subagents: &[String], roots: &[PathBuf]) -> Par
 
 fn lines(text: &str) -> impl Iterator<Item = Value> + '_ {
     text.lines().filter_map(|l| serde_json::from_str::<Value>(l).ok()).filter(Value::is_object)
+}
+
+/// The checked-out branch Claude Code recorded on this line. `HEAD` means
+/// detached (or no commits yet), which names no branch.
+fn git_branch(v: &Value) -> Option<String> {
+    v["gitBranch"].as_str().filter(|b| !b.is_empty() && *b != "HEAD").map(String::from)
 }
 
 fn blocks(v: &Value) -> impl Iterator<Item = &Value> {
@@ -301,6 +311,30 @@ mod tests {
         let tool = |p: &str| s.entries.iter().find(|e| e.path == p).map(|e| e.tool);
         assert_eq!(tool("src-tauri/src/lib.rs"), Some(EditTool::Write));
         assert!(s.entries.iter().any(|e| e.tool == EditTool::Edit));
+    }
+
+    /// A real session (redacted) that started on main and switched to a
+    /// feature branch halfway: every edit carries the branch it was made on.
+    #[test]
+    fn real_branch_session_records_the_branch_per_edit() {
+        const BRANCHED: &str = include_str!("../../tests/fixtures/session-branch-real.jsonl");
+        let s = parse_session(BRANCHED, &[], &roots("/Users/dev/Workspace/Personal/git-ui"));
+        let on = |b: &str| s.entries.iter().filter(|e| e.branch.as_deref() == Some(b)).count();
+        assert!(on("main") > 0 && on("feat/diff-panel-navigation") > 0, "{:?}", s.entries.iter().map(|e| &e.branch).collect::<Vec<_>>());
+        assert_eq!(on("main") + on("feat/diff-panel-navigation"), s.entries.len(), "no edit without a branch");
+        // Once on the feature branch, it never went back.
+        let first_feat = s.entries.iter().position(|e| e.branch.as_deref() == Some("feat/diff-panel-navigation")).unwrap();
+        assert!(s.entries[first_feat..].iter().all(|e| e.branch.as_deref() == Some("feat/diff-panel-navigation")));
+        let switch_turn = s.turns.iter().position(|t| t.branch.as_deref() == Some("feat/diff-panel-navigation")).unwrap();
+        assert!(s.turns[..switch_turn].iter().all(|t| t.branch.as_deref() == Some("main")));
+        assert!(s.entries.iter().all(|e| !e.path.starts_with('/') && !e.path.contains("outside-repo")));
+    }
+
+    #[test]
+    fn head_is_not_a_branch() {
+        let line = r#"{"type":"assistant","gitBranch":"HEAD","cwd":"/p","timestamp":"2026-01-01T00:00:00Z","message":{"content":[{"type":"tool_use","id":"t","name":"Write","input":{"file_path":"/p/a.ts"}}]}}"#;
+        let s = parse_session(line, &[], &roots("/p"));
+        assert_eq!(s.entries[0].branch, None);
     }
 
     #[test]

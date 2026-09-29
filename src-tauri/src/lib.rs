@@ -1,4 +1,5 @@
 mod actions;
+mod branch;
 mod claude;
 mod error;
 mod flags;
@@ -241,10 +242,13 @@ struct Done {
 }
 
 /// `f`: deliver the queued notes in the configured mode (SPEC §6).
+/// `session_id` is the model's state key; `resume_session` the Claude
+/// session the feedback is for (they differ in a branch review).
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 fn notes_transmit(
     session_id: String,
+    resume_session: Option<String>,
     force: bool,
     state: State<RepoState>,
     store: State<ReviewStore>,
@@ -257,33 +261,47 @@ fn notes_transmit(
     let repo = state.open()?;
     let git_dir = repo.path().to_path_buf();
     let workdir = state.path()?;
-    let batch = notes::prepare(&store, &git_dir, &session_id)?;
-    let count = batch.note_ids.len();
+    let range = git::target::resolve(&repo, &state.target())?;
+    let mut ctx = notes::PromptContext { session: resume_session.clone(), ..Default::default() };
+    if let Some(r) = &range {
+        ctx.branch = Some((r.head.clone(), r.base.clone()));
+        let st = store.load(&git_dir, &session_id)?;
+        let ids: std::collections::HashSet<String> = st
+            .verdicts
+            .iter()
+            .filter(|(id, v)| **v == Verdict::Revert && !st.requested.contains(id))
+            .map(|(id, _)| id.clone())
+            .collect();
+        ctx.requests = branch::revert_requests(&repo, r, &ids)?;
+    }
+    let batch = notes::prepare(&store, &git_dir, &session_id, ctx)?;
+    let count = batch.sent.note_ids.len();
     let mode = settings.get().transmit_mode;
     let copy = |text: &str| app.clipboard().write_text(text.to_string()).map_err(|e| AppError::Other(format!("clipboard: {e}")));
     match mode {
         TransmitMode::Clipboard => {
             copy(&batch.prompt)?;
-            notes::mark_sent(&store, &git_dir, &session_id, &batch.note_ids, batch.discards(), mode)?;
+            notes::mark_sent(&store, &git_dir, &session_id, &batch.sent, mode)?;
             Ok(TransmitOutcome::Copied { notes: count })
         }
         TransmitMode::File => {
             let (file, pointer) = notes::write_feedback(&git_dir, &workdir, &batch.prompt)?;
             copy(&pointer)?;
-            notes::mark_sent(&store, &git_dir, &session_id, &batch.note_ids, batch.discards(), mode)?;
+            notes::mark_sent(&store, &git_dir, &session_id, &batch.sent, mode)?;
             Ok(TransmitOutcome::Written { notes: count, path: file.to_string_lossy().to_string() })
         }
         TransmitMode::Resume => {
-            if session_id == NO_SESSION {
-                return Err(AppError::Input("resume needs a linked Claude session".into()));
-            }
-            review_state::state_file(&git_dir, &session_id)?; // validates the id
+            let claude_session = resume_session
+                .clone()
+                .or_else(|| (range.is_none() && session_id != NO_SESSION).then(|| session_id.clone()))
+                .ok_or_else(|| AppError::Input("resume needs a linked Claude session".into()))?;
+            review_state::state_file(&git_dir, &claude_session)?; // validates the id
             let projects = projects_dir().ok_or(AppError::Other("no Claude config dir".into()))?;
             let session = list_sessions(&cache, &projects, &repo_roots(&workdir))?
                 .into_iter()
                 .map(|s| s.0)
-                .find(|s| s.id == session_id)
-                .ok_or_else(|| AppError::Input(format!("session {session_id} not found for this repo")))?;
+                .find(|s| s.id == claude_session)
+                .ok_or_else(|| AppError::Input(format!("session {claude_session} not found for this repo")))?;
             let age = time::now_ms() - session.updated_at;
             if age < ACTIVE_SESSION_MS && !force {
                 return Ok(TransmitOutcome::Confirm {
@@ -293,10 +311,9 @@ fn notes_transmit(
             let bin = claude::find_claude(settings.get().claude_path.as_deref())
                 .ok_or_else(|| AppError::Other("claude CLI not found; set claudePath in settings".into()))?;
             let cwd = if session.cwd.is_empty() { workdir.clone() } else { std::path::PathBuf::from(&session.cwd) };
-            let args = vec!["--resume".to_string(), session_id.clone(), "-p".to_string(), batch.prompt.clone()];
+            let args = vec!["--resume".to_string(), claude_session, "-p".to_string(), batch.prompt.clone()];
             let (out_app, done_app) = (app.clone(), app.clone());
-            let ids = batch.note_ids.clone();
-            let discards = batch.discards().to_vec();
+            let sent = batch.sent.clone();
             runner.spawn(
                 &bin,
                 &args,
@@ -306,9 +323,9 @@ fn notes_transmit(
                 },
                 move |code| {
                     // Only a clean exit takes the notes off the queue.
-                    let sent = code == Some(0)
-                        && notes::mark_sent(&done_app.state::<ReviewStore>(), &git_dir, &session_id, &ids, &discards, mode).is_ok();
-                    let _ = done_app.emit(TRANSMIT_DONE, Done { code, sent });
+                    let ok = code == Some(0)
+                        && notes::mark_sent(&done_app.state::<ReviewStore>(), &git_dir, &session_id, &sent, mode).is_ok();
+                    let _ = done_app.emit(TRANSMIT_DONE, Done { code, sent: ok });
                     let _ = done_app.emit(REVIEW_UPDATED, ());
                 },
             )?;

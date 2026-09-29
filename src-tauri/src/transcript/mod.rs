@@ -51,6 +51,9 @@ pub struct LedgerEntry {
     pub timestamp: String,
     /// 1-based index of the turn this edit belongs to.
     pub turn: usize,
+    /// Branch checked out when the edit was made (`gitBranch`); None when
+    /// detached or not recorded.
+    pub branch: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -68,6 +71,8 @@ pub struct Turn {
     /// Bash commands run in this turn, recorded (never run) because they may
     /// write files we can't attribute.
     pub commands: Vec<String>,
+    /// Branch checked out when the prompt was sent.
+    pub branch: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -5,7 +5,10 @@ Keeps the shape the parser depends on (line types, uuids, timestamps, cwd,
 tool names, file paths, tool_result errors) and blanks everything else:
 prompts, assistant text, thinking, commands, file contents and tool output.
 
-    scripts/redact-transcript.py SESSION.jsonl OUT.jsonl [--home /Users/dev]
+    scripts/redact-transcript.py SESSION.jsonl OUT.jsonl [--home /Users/dev] [--repo /path/to/repo]
+
+With --repo, file paths outside that repo (memory files, scratch dirs)
+become "/redacted/outside-repo", so they can't leak into a fixture.
 
 Prompts become "[prompt N]", assistant text "[text N]" and the AI title
 "Redacted session title", so tests can assert which one the parser picked.
@@ -25,10 +28,23 @@ FORBIDDEN = re.compile(os.environ.get("REDACT_FORBID") or r"(?!)", re.I)
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+")
 
 
+OUTSIDE = "/redacted/outside-repo"  # absolute, so it never resolves inside a repo
+REPO = None  # set from --repo
+
+
+def keep_path(v):
+    """A kept file path, or OUTSIDE when --repo is set and it isn't under it.
+    Relative paths are kept: they resolve against the line's cwd."""
+    if REPO is None or not isinstance(v, str) or not os.path.isabs(v):
+        return v
+    real = os.path.normpath(v)
+    return v if real == REPO or real.startswith(REPO + os.sep) else OUTSIDE
+
+
 def redact_input(inp):
     if not isinstance(inp, dict):
         return "[redacted]"
-    return {k: (v if k in KEEP_INPUT else "[redacted]") for k, v in inp.items()}
+    return {k: (keep_path(v) if k in KEEP_INPUT else "[redacted]") for k, v in inp.items()}
 
 
 def main():
@@ -36,7 +52,10 @@ def main():
     ap.add_argument("src")
     ap.add_argument("out")
     ap.add_argument("--home", default="/Users/dev")
+    ap.add_argument("--repo", help="blank file paths outside this repo")
     args = ap.parse_args()
+    global REPO
+    REPO = os.path.normpath(os.path.abspath(args.repo)) if args.repo else None
     real_home = os.path.expanduser("~")
     counters = {"prompt": 0, "text": 0}
     user = os.path.basename(real_home)
@@ -90,7 +109,7 @@ def main():
             o["wireToolInputs"] = {k: redact_input(v) for k, v in o["wireToolInputs"].items()}
         tur = o.get("toolUseResult")
         if isinstance(tur, dict):
-            o["toolUseResult"] = {k: tur[k] for k in ("type", "filePath") if k in tur}
+            o["toolUseResult"] = {k: (keep_path(tur[k]) if k == "filePath" else tur[k]) for k in ("type", "filePath") if k in tur}
         elif tur is not None:
             o["toolUseResult"] = "[redacted]"
         line_out = scrub(json.dumps(o, ensure_ascii=False))

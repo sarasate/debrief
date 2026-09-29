@@ -3,6 +3,7 @@
 //! whatever no transmission names.
 
 use crate::error::{AppError, AppResult};
+use crate::branch::RevertRequest;
 use crate::review_state::{DiscardRecord, Note, ReviewStore, TransmitMode, Transmission, NO_SESSION, STATE_DIR};
 use crate::time::{now_iso, now_ms};
 use std::path::{Path, PathBuf};
@@ -55,13 +56,30 @@ fn ranges(header: &str) -> &str {
 }
 
 /// The prompt, exactly as SPEC §6 lays it out.
-pub fn build_prompt(session: Option<&str>, notes: &[Note], discards: &[DiscardRecord]) -> String {
+/// Who and what the prompt is about.
+#[derive(Debug, Clone, Default)]
+pub struct PromptContext {
+    /// The Claude session the feedback is for.
+    pub session: Option<String>,
+    /// Branch review: (branch, base).
+    pub branch: Option<(String, String)>,
+    /// Branch review: committed hunks marked revert, not yet requested.
+    pub requests: Vec<RevertRequest>,
+}
+
+/// The prompt, as SPEC §6 lays it out. A branch review names the branch and
+/// asks for committed hunks marked revert to be reverted in a new commit.
+pub fn build_prompt(ctx: &PromptContext, notes: &[Note], discards: &[DiscardRecord]) -> String {
     let n = notes.len();
-    let who = match session {
+    let mut who = Vec::new();
+    if let Some((head, base)) = &ctx.branch {
+        who.push(format!("branch {head} ← {base}"));
+    }
+    who.push(match &ctx.session {
         Some(id) => format!("session {id}"),
         None => "no linked session".into(),
-    };
-    let mut out = format!("Review feedback from Debrief ({who}, {n} note{}):\n\n", if n == 1 { "" } else { "s" });
+    });
+    let mut out = format!("Review feedback from Debrief ({}, {n} note{}):\n\n", who.join(", "), if n == 1 { "" } else { "s" });
     for (i, note) in notes.iter().enumerate() {
         let scope = match &note.hunk_header {
             Some(h) => format!(" (hunk {})", ranges(h)),
@@ -72,54 +90,76 @@ pub fn build_prompt(session: Option<&str>, notes: &[Note], discards: &[DiscardRe
             out.push_str(&format!("   {line}\n"));
         }
     }
+    if n > 0 {
+        out.push('\n');
+    }
+    if !ctx.requests.is_empty() {
+        let list = ctx.requests.iter().map(|r| format!("{} (hunk {})", r.path, ranges(&r.header))).collect::<Vec<_>>().join("; ");
+        out.push_str(&format!("Please revert these committed hunks in a new commit: {list}.\n"));
+    }
     let reverted = if discards.is_empty() {
         "none".to_string()
     } else {
         discards.iter().map(|d| format!("{} (hunk {})", d.path, ranges(&d.header))).collect::<Vec<_>>().join("; ")
     };
-    if n > 0 {
-        out.push('\n');
-    }
     out.push_str(&format!("Reverted hunks (already discarded from the working tree): {reverted}.\n"));
     out.push_str("Please address the notes, then stop so I can review again.\n");
     out
 }
 
+/// What a transmission carried, recorded once it's sent.
+#[derive(Debug, Clone, Default)]
+pub struct Sent {
+    pub note_ids: Vec<String>,
+    pub discards: Vec<DiscardRecord>,
+    pub request_ids: Vec<String>,
+}
+
 /// What one transmission will carry.
 pub struct Batch {
     pub prompt: String,
-    pub note_ids: Vec<String>,
-    discards: Vec<DiscardRecord>,
+    pub sent: Sent,
 }
 
-pub fn prepare(store: &ReviewStore, git_dir: &Path, key: &str) -> AppResult<Batch> {
+/// `ctx.requests` should already leave out what `requested` holds; this
+/// filters again so a stale caller can't re-send.
+pub fn prepare(store: &ReviewStore, git_dir: &Path, key: &str, mut ctx: PromptContext) -> AppResult<Batch> {
     let st = store.load(git_dir, key)?;
     let notes = st.queued_notes();
     let discards = st.unreported_discards();
-    if notes.is_empty() && discards.is_empty() {
+    ctx.requests.retain(|r| !st.requested.contains(&r.hunk_id));
+    if notes.is_empty() && discards.is_empty() && ctx.requests.is_empty() {
         return Err(AppError::Input("nothing to transmit: queue a note first".into()));
     }
-    let session = (key != NO_SESSION).then_some(key);
-    Ok(Batch { prompt: build_prompt(session, &notes, &discards), note_ids: notes.iter().map(|n| n.id.clone()).collect(), discards })
-}
-
-/// Record the batch as sent: its notes leave the queue, its discards are
-/// reported.
-pub fn mark_sent(store: &ReviewStore, git_dir: &Path, key: &str, batch_ids: &[String], discards: &[DiscardRecord], mode: TransmitMode) -> AppResult<()> {
-    store.update(git_dir, key, |s| {
-        s.transmitted.push(Transmission { at: now_iso(), note_ids: batch_ids.to_vec(), mode });
-        for d in s.discarded.iter_mut() {
-            if discards.iter().any(|x| x.at == d.at && x.path == d.path && x.header == d.header) {
-                d.reported = true;
-            }
-        }
+    if ctx.session.is_none() && ctx.branch.is_none() && key != NO_SESSION {
+        ctx.session = Some(key.to_string());
+    }
+    Ok(Batch {
+        prompt: build_prompt(&ctx, &notes, &discards),
+        sent: Sent {
+            note_ids: notes.iter().map(|n| n.id.clone()).collect(),
+            discards,
+            request_ids: ctx.requests.iter().map(|r| r.hunk_id.clone()).collect(),
+        },
     })
 }
 
-impl Batch {
-    pub fn discards(&self) -> &[DiscardRecord] {
-        &self.discards
-    }
+/// Record the batch as sent: its notes leave the queue, its discards are
+/// reported and its revert requests won't be sent again.
+pub fn mark_sent(store: &ReviewStore, git_dir: &Path, key: &str, sent: &Sent, mode: TransmitMode) -> AppResult<()> {
+    store.update(git_dir, key, |s| {
+        s.transmitted.push(Transmission { at: now_iso(), note_ids: sent.note_ids.clone(), mode });
+        for d in s.discarded.iter_mut() {
+            if sent.discards.iter().any(|x| x.at == d.at && x.path == d.path && x.header == d.header) {
+                d.reported = true;
+            }
+        }
+        for id in &sent.request_ids {
+            if !s.requested.contains(id) {
+                s.requested.push(id.clone());
+            }
+        }
+    })
 }
 
 /// File mode: write `<git dir>/debrief/feedback.md`; return its path and
@@ -162,7 +202,8 @@ mod tests {
             note(".env.example", None, "Add these to Vercel and 1Password.\nThen tell me."),
         ];
         let discards = [DiscardRecord { at: "t".into(), path: "pnpm-lock.yaml".into(), header: "@@ -212,5 +212,5 @@ importers".into(), reported: false }];
-        let p = build_prompt(Some("8121a8ef"), &notes, &discards);
+        let ctx = PromptContext { session: Some("8121a8ef".into()), ..Default::default() };
+        let p = build_prompt(&ctx, &notes, &discards);
         assert_eq!(
             p,
             "Review feedback from Debrief (session 8121a8ef, 2 notes):\n\
@@ -180,7 +221,7 @@ mod tests {
 
     #[test]
     fn prompt_without_reverts_or_session() {
-        let p = build_prompt(None, &[note("a.ts", None, "x")], &[]);
+        let p = build_prompt(&PromptContext::default(), &[note("a.ts", None, "x")], &[]);
         assert!(p.starts_with("Review feedback from Debrief (no linked session, 1 note):"));
         assert!(p.contains("working tree): none.\n"));
     }
@@ -197,15 +238,15 @@ mod tests {
         assert_ne!(n1.id, n2.id);
 
         remove(&store, g, "s1", &n2.id).unwrap();
-        let batch = prepare(&store, g, "s1").unwrap();
-        assert_eq!(batch.note_ids, [n1.id.clone()]);
+        let batch = prepare(&store, g, "s1", PromptContext::default()).unwrap();
+        assert_eq!(batch.sent.note_ids, [n1.id.clone()]);
         assert!(batch.prompt.contains("1. a.ts (hunk @@ -1,2 +1,3 @@)"));
 
-        mark_sent(&store, g, "s1", &batch.note_ids, batch.discards(), TransmitMode::Clipboard).unwrap();
+        mark_sent(&store, g, "s1", &batch.sent, TransmitMode::Clipboard).unwrap();
         let st = store.load(g, "s1").unwrap();
         assert!(st.queued_notes().is_empty());
         assert_eq!(st.transmitted.len(), 1);
-        assert!(prepare(&store, g, "s1").is_err(), "queue is empty");
+        assert!(prepare(&store, g, "s1", PromptContext::default()).is_err(), "queue is empty");
 
         remove(&store, g, "s1", &n1.id).unwrap();
         assert_eq!(store.load(g, "s1").unwrap().notes.len(), 1, "sent notes stay on record");
@@ -221,10 +262,31 @@ mod tests {
                 s.discarded.push(DiscardRecord { at: "t1".into(), path: "a.ts".into(), header: "@@ -1 +1 @@".into(), reported: false })
             })
             .unwrap();
-        let batch = prepare(&store, g, "s1").unwrap();
+        let batch = prepare(&store, g, "s1", PromptContext::default()).unwrap();
         assert!(batch.prompt.contains("a.ts (hunk @@ -1 +1 @@)"));
-        mark_sent(&store, g, "s1", &batch.note_ids, batch.discards(), TransmitMode::File).unwrap();
-        assert!(prepare(&store, g, "s1").is_err());
+        mark_sent(&store, g, "s1", &batch.sent, TransmitMode::File).unwrap();
+        assert!(prepare(&store, g, "s1", PromptContext::default()).is_err());
+    }
+
+    #[test]
+    fn branch_prompt_names_the_branch_and_requests_reverts_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ReviewStore::new();
+        let g = dir.path();
+        add(&store, g, "branch-x", "a.ts", None, "tighten this").unwrap();
+        let req = RevertRequest { hunk_id: "h1".into(), path: "src/pricing.ts".into(), header: "@@ -12,8 +14,10 @@ export function".into() };
+        let ctx = PromptContext {
+            session: Some("s2".into()),
+            branch: Some(("feat/discount-codes".into(), "main".into())),
+            requests: vec![req.clone()],
+        };
+        let batch = prepare(&store, g, "branch-x", ctx.clone()).unwrap();
+        assert!(batch.prompt.starts_with("Review feedback from Debrief (branch feat/discount-codes ← main, session s2, 1 note):"), "{}", batch.prompt);
+        assert!(batch.prompt.contains("Please revert these committed hunks in a new commit: src/pricing.ts (hunk @@ -12,8 +14,10 @@).\n"));
+        mark_sent(&store, g, "branch-x", &batch.sent, TransmitMode::Clipboard).unwrap();
+
+        // Sent once: the next batch with no new notes has nothing to say.
+        assert!(prepare(&store, g, "branch-x", ctx).is_err());
     }
 
     #[test]
