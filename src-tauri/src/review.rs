@@ -6,8 +6,9 @@ use crate::flags::{evaluate, is_test_path, FileFacts, Flag};
 use crate::git::status::ContentScan;
 use crate::git::types::{ChangedFile, FileStatus, RepoStatus};
 use crate::noise::{Noise, NoiseConfig};
-use crate::review_state::{Current, ReviewStore, Verdict, NO_SESSION};
+use crate::review_state::{Current, Note, ReviewStore, Verdict, NO_SESSION};
 use crate::state::RepoState;
+use crate::time::epoch_secs;
 use crate::transcript::parse::ParsedSession;
 use crate::transcript::sessions::{list_sessions, SessionInfo, TranscriptCache};
 use crate::transcript::{EditTool, Turn};
@@ -77,6 +78,10 @@ pub struct ReviewModel {
     pub invalidated: Vec<String>,
     /// Which state file the progress lives in: the session id or "worktree".
     pub state_key: String,
+    /// Field notes waiting to be transmitted, oldest first.
+    pub notes: Vec<Note>,
+    /// Discarded hunks the next transmit will mention.
+    pub unreported_discards: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -170,6 +175,8 @@ pub fn review_model(
     Ok(ReviewModel {
         files,
         noise: noise_config,
+        notes: review.queued_notes(),
+        unreported_discards: review.unreported_discards().len(),
         verdicts: review.verdicts,
         invalidated,
         state_key,
@@ -232,25 +239,6 @@ fn drop_committed(session: &ParsedSession, committed: &HashMap<String, i64>) -> 
         _ => true,
     });
     s
-}
-
-/// `2026-09-27T19:26:25.459Z` → seconds since the epoch. Transcripts write
-/// UTC with a `Z`; anything else is ignored.
-fn epoch_secs(ts: &str) -> Option<i64> {
-    let (date, time) = ts.strip_suffix('Z')?.split_once('T')?;
-    let mut d = date.splitn(3, '-').map(|x| x.parse::<i64>().ok());
-    let (y, m, day) = (d.next()??, d.next()??, d.next()??);
-    let mut t = time.splitn(3, ':');
-    let (hh, mm) = (t.next()?.parse::<i64>().ok()?, t.next()?.parse::<i64>().ok()?);
-    let ss = t.next()?.split('.').next()?.parse::<i64>().ok()?;
-    // Days from civil (Howard Hinnant's algorithm).
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = y.div_euclid(400);
-    let yoe = y - era * 400;
-    let doy = (153 * (m + if m > 2 { -3 } else { 9 }) + 2) / 5 + day - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146_097 + doe - 719_468;
-    Some(days * 86_400 + hh * 3600 + mm * 60 + ss)
 }
 
 pub fn group(files: &[ChangedFile], session: Option<&ParsedSession>, noise: &Noise) -> Vec<IntentGroup> {
@@ -425,14 +413,6 @@ mod tests {
             [("unattributed".to_string(), vec!["a.ts"]), ("generated".to_string(), vec!["Cargo.lock"])]
         );
         assert!(groups[0].briefing.starts_with("No Claude Code session"));
-    }
-
-    #[test]
-    fn epoch_secs_parses_transcript_timestamps() {
-        assert_eq!(epoch_secs("1970-01-01T00:00:00.000Z"), Some(0));
-        assert_eq!(epoch_secs("2026-09-27T19:26:25.459Z"), Some(1_790_537_185));
-        assert_eq!(epoch_secs("2024-02-29T12:00:00Z"), Some(1_709_208_000));
-        assert_eq!(epoch_secs("2026-09-27 19:26:25"), None);
     }
 
     /// Claude writes a.ts and b.ts in turn 1; a commit then takes both; b.ts

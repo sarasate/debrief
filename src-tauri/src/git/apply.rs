@@ -48,6 +48,9 @@ pub struct DiscardResult {
     /// (path, oid before, oid after), so review state can follow the file.
     #[serde(skip)]
     pub touched: Vec<(String, String, String)>,
+    /// (path, `@@` header) of each discarded hunk, for the transmit prompt.
+    #[serde(skip)]
+    pub headers: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -240,6 +243,7 @@ pub fn discard(repo: &Repository, workdir: &Path, ids: &HashSet<String>) -> AppR
             }
         }
         res.discarded.extend(sel.iter().map(|h| h.id.clone()));
+        res.headers.extend(sel.iter().map(|h| (f.path.clone(), h.header.clone())));
         res.touched.push((f.path.clone(), before_oid, after_oid));
     }
     if index_dirty {

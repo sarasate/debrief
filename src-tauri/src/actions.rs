@@ -6,7 +6,7 @@
 use crate::error::AppResult;
 use crate::git::apply::{self, DiscardResult, Failure, StageResult};
 use crate::git::status::worktree_oid;
-use crate::review_state::{ReviewStore, Verdict};
+use crate::review_state::{DiscardRecord, ReviewStore, Verdict};
 use git2::Repository;
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
@@ -53,6 +53,10 @@ pub fn discard_reverted(repo: &Repository, workdir: &Path, store: &ReviewStore, 
         }
         for id in &res.discarded {
             s.verdicts.remove(id);
+        }
+        let at = crate::time::now_iso();
+        for (path, header) in &res.headers {
+            s.discarded.push(DiscardRecord { at: at.clone(), path: path.clone(), header: header.clone(), reported: false });
         }
     })?;
     Ok(res)
@@ -108,6 +112,10 @@ mod tests {
         assert_eq!(m.invalidated, ["b.txt"], "only the real edit; our own discard isn't 'changed since cleared'");
         assert!(m.files["a.txt"].viewed);
         assert!(m.verdicts.is_empty());
+        let log = store.load(fx.repo.path(), NO_SESSION).unwrap().unreported_discards();
+        assert_eq!(log.len(), 1);
+        assert_eq!(log[0].path, "a.txt");
+        assert!(log[0].header.starts_with("@@ -1,6 +1,6 @@"), "{}", log[0].header);
         assert_eq!(m.files["a.txt"].hunk_ids, [a.hunk_ids[1].clone()]);
     }
 

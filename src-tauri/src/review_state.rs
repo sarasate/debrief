@@ -28,9 +28,64 @@ pub struct ReviewState {
     pub viewed: BTreeMap<String, String>,
     /// hunk id -> verdict.
     pub verdicts: BTreeMap<String, Verdict>,
-    /// Owned by M6 (field notes); carried through untouched.
-    pub notes: Vec<serde_json::Value>,
-    pub transmitted: Vec<serde_json::Value>,
+    /// Every note ever queued; the queue is the ones no transmission names.
+    pub notes: Vec<Note>,
+    pub transmitted: Vec<Transmission>,
+    /// Hunks `d` discarded, so the next transmit can tell Claude.
+    pub discarded: Vec<DiscardRecord>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TransmitMode {
+    #[default]
+    Clipboard,
+    File,
+    Resume,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Note {
+    pub id: String,
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hunk_id: Option<String>,
+    /// The `@@` header when the note was written; the hunk may be gone later.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hunk_header: Option<String>,
+    pub text: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Transmission {
+    pub at: String,
+    pub note_ids: Vec<String>,
+    pub mode: TransmitMode,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscardRecord {
+    pub at: String,
+    pub path: String,
+    pub header: String,
+    /// Already listed in a transmitted prompt.
+    #[serde(default)]
+    pub reported: bool,
+}
+
+impl ReviewState {
+    pub fn queued_notes(&self) -> Vec<Note> {
+        let sent: HashSet<&str> = self.transmitted.iter().flat_map(|t| t.note_ids.iter().map(String::as_str)).collect();
+        self.notes.iter().filter(|n| !sent.contains(n.id.as_str())).cloned().collect()
+    }
+
+    pub fn unreported_discards(&self) -> Vec<DiscardRecord> {
+        self.discarded.iter().filter(|d| !d.reported).cloned().collect()
+    }
 }
 
 /// A changed file as `reconcile` sees it.
@@ -169,18 +224,54 @@ mod tests {
             .update(dir.path(), "s1", |s| {
                 s.viewed.insert("a.ts".into(), "oid".into());
                 s.verdicts.insert("abc".into(), Verdict::Revert);
-                s.notes.push(serde_json::json!({"id": "n1", "text": "keep me"}));
+                s.notes.push(Note {
+                    id: "n1".into(),
+                    path: "a.ts".into(),
+                    hunk_id: None,
+                    hunk_header: None,
+                    text: "keep me".into(),
+                    created_at: "2026-09-29T10:00:00.000Z".into(),
+                });
             })
             .unwrap();
         let st = store.load(dir.path(), "s1").unwrap();
         assert_eq!(st.session_id, "s1");
         assert_eq!(st.viewed["a.ts"], "oid");
         assert_eq!(st.verdicts["abc"], Verdict::Revert);
-        assert_eq!(st.notes[0]["text"], "keep me");
+        assert_eq!(st.notes[0].text, "keep me");
 
         let raw = std::fs::read_to_string(dir.path().join("debrief/s1.json")).unwrap();
         assert!(raw.contains("\"revert\"") && raw.contains("\"sessionId\""), "{raw}");
         assert!(store.load(dir.path(), "other").unwrap().viewed.is_empty(), "per session");
+    }
+
+    #[test]
+    fn m4_state_files_still_load() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("debrief")).unwrap();
+        std::fs::write(
+            dir.path().join("debrief/s1.json"),
+            r#"{"sessionId":"s1","viewed":{"a.ts":"o"},"verdicts":{},"notes":[],"transmitted":[]}"#,
+        )
+        .unwrap();
+        let st = ReviewStore::new().load(dir.path(), "s1").unwrap();
+        assert_eq!(st.viewed["a.ts"], "o");
+        assert!(st.discarded.is_empty());
+    }
+
+    #[test]
+    fn queue_is_notes_no_transmission_names() {
+        let note = |id: &str| Note {
+            id: id.into(),
+            path: "a.ts".into(),
+            hunk_id: None,
+            hunk_header: None,
+            text: id.into(),
+            created_at: String::new(),
+        };
+        let mut st = ReviewState { notes: vec![note("n1"), note("n2")], ..Default::default() };
+        st.transmitted.push(Transmission { at: String::new(), note_ids: vec!["n1".into()], mode: TransmitMode::File });
+        assert_eq!(st.queued_notes().iter().map(|n| n.id.as_str()).collect::<Vec<_>>(), ["n2"]);
     }
 
     #[test]
