@@ -180,3 +180,34 @@ input, textarea {
   outline-offset: -1px;
   background: color-mix(in srgb, #ffb000 14%, transparent);
 }
+
+/* Accent tweak (SPEC §2): set on <html data-accent="…"> from settings */
+:root[data-accent="green"] { --ac: #39ff7d; }
+:root[data-accent="amber"] { --ac: #ffb000; }
+:root[data-accent="red"] { --ac: #ff5a3c; }
+
+/* Scanlines tweak: <html data-scanlines="off"> */
+:root[data-scanlines="off"] .dc-scanlines,
+:root[data-scanlines="off"] .dc-sweep { display: none; }
+
+/* Syntax colours inside diff lines (shiki css-variables theme). Muted, so
+   the add/del backgrounds stay the loudest signal; plain text keeps the
+   line's own add/del/context colour. */
+.dc-diff-add { --shiki-foreground: #7fd49a; }
+.dc-diff-del { --shiki-foreground: #d98a7d; }
+.dc-diff-ctx { --shiki-foreground: #8aa0a6; }
+.dc-syntax {
+  --shiki-token-keyword: #6fc3d6;
+  --shiki-token-constant: #e0a372;
+  --shiki-token-string: #d9c27a;
+  --shiki-token-string-expression: #d9c27a;
+  --shiki-token-function: #9fd0ff;
+  --shiki-token-parameter: #dceef1;
+  --shiki-token-punctuation: #8aa0a6;
+  --shiki-token-comment: #5a6e72;
+  --shiki-token-link: #6fc3d6;
+  --shiki-token-inserted: #7fd49a;
+  --shiki-token-deleted: #d98a7d;
+  --shiki-token-changed: #ffb000;
+}
+.dc-diff-del.dc-syntax { filter: saturate(0.7); }
