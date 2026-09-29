@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// App settings, persisted as JSON in the app config dir — never in a repo.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     pub last_repo: Option<String>,
@@ -15,6 +15,25 @@ pub struct Settings {
     /// Explicit path to the `claude` binary; found on PATH and the usual
     /// install dirs when unset.
     pub claude_path: Option<String>,
+    /// The DEADBOLT accents (SPEC §2).
+    pub accent: Accent,
+    pub scanlines: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self { last_repo: None, transmit_mode: TransmitMode::default(), claude_path: None, accent: Accent::default(), scanlines: true }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Accent {
+    #[default]
+    Cyan,
+    Green,
+    Amber,
+    Red,
 }
 
 pub struct SettingsStore {
@@ -78,6 +97,8 @@ mod tests {
         let s = SettingsStore::load(file).get();
         assert_eq!(s.last_repo.as_deref(), Some("/r"));
         assert_eq!(s.transmit_mode, TransmitMode::Clipboard);
+        assert_eq!(s.accent, Accent::Cyan);
+        assert!(s.scanlines, "scanlines default on");
     }
 
     #[test]

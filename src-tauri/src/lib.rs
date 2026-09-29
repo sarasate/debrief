@@ -19,7 +19,7 @@ use review::ReviewModel;
 use claude::ClaudeRunner;
 use review_state::{Note, ReviewStore, TransmitMode, Verdict, NO_SESSION};
 use serde::Serialize;
-use settings::Settings;
+use settings::{Accent, Settings};
 use settings::SettingsStore;
 use transcript::sessions::{list_sessions, SessionInfo, TranscriptCache};
 use transcript::{projects_dir, repo_roots, slug, Ledger};
@@ -312,9 +312,22 @@ fn settings_get(settings: State<SettingsStore>) -> AppResult<Settings> {
 fn settings_set(
     transmit_mode: Option<TransmitMode>,
     claude_path: Option<String>,
+    accent: Option<Accent>,
+    scanlines: Option<bool>,
     settings: State<SettingsStore>,
 ) -> AppResult<Settings> {
+    if let Some(p) = claude_path.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
+        if !std::path::Path::new(p).is_file() {
+            return Err(AppError::Input(format!("{p} is not a file")));
+        }
+    }
     settings.update(|s| {
+        if let Some(a) = accent {
+            s.accent = a;
+        }
+        if let Some(on) = scanlines {
+            s.scanlines = on;
+        }
         if let Some(m) = transmit_mode {
             s.transmit_mode = m;
         }
