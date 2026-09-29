@@ -4,6 +4,7 @@
 use crate::error::AppResult;
 use crate::flags::{evaluate, is_test_path, FileFacts, Flag};
 use crate::git::status::ContentScan;
+use crate::git::target::{resolve, Range};
 use crate::git::types::{ChangedFile, FileStatus, RepoStatus};
 use crate::noise::{Noise, NoiseConfig};
 use crate::review_state::{Current, Note, ReviewStore, Verdict, NO_SESSION};
@@ -82,6 +83,8 @@ pub struct ReviewModel {
     pub notes: Vec<Note>,
     /// Discarded hunks the next transmit will mention.
     pub unreported_discards: usize,
+    /// The branch under review; None for the working tree.
+    pub range: Option<Range>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -94,6 +97,9 @@ pub struct FileMeta {
     /// the reviewer looked still invalidates the mark.
     pub oid: String,
     pub hunk_ids: Vec<String>,
+    /// In a branch review, the hunks that are still uncommitted: the only
+    /// ones stage and discard act on. None in a worktree review (all are).
+    pub uncommitted: Option<Vec<String>>,
 }
 
 /// `session_id` None picks the most recently written session.
@@ -105,7 +111,8 @@ pub fn review_model(
     session_id: Option<&str>,
 ) -> AppResult<ReviewModel> {
     let repo = state.open()?;
-    let (status, scans) = crate::git::status::repo_status_scanned(&repo)?;
+    let range = resolve(&repo, &state.target())?;
+    let (status, scans) = crate::git::status::repo_status_scanned(&repo, range.as_ref())?;
     let workdir = state.path()?;
     let roots = crate::transcript::repo_roots(&workdir);
     let sessions = match projects {
@@ -117,9 +124,12 @@ pub fn review_model(
         .or_else(|| sessions.first());
     let (noise, noise_config) = crate::noise::load(&workdir)?;
     let parsed = chosen.map(|s| s.1.as_ref());
-    let pending = match parsed {
-        Some(p) => Some(drop_committed(p, &committed_since(&repo, p)?)),
-        None => None,
+    // Committed work can't explain what is dirty in the worktree, so it is
+    // dropped there; in a branch review committed work is the point.
+    let pending = match (parsed, &range) {
+        (Some(p), None) => Some(drop_committed(p, &committed_since(&repo, p)?)),
+        (Some(p), Some(_)) => Some(p.clone()),
+        (None, _) => None,
     };
     let groups = group(&status.files, pending.as_ref(), &noise);
     // Without a session every file is unattributed, which says nothing.
@@ -132,7 +142,21 @@ pub fn review_model(
     } else {
         BTreeSet::new()
     };
-    let state_key = chosen.map_or(NO_SESSION, |s| s.0.id.as_str()).to_string();
+    let state_key = match &range {
+        Some(r) => r.state_key(),
+        None => chosen.map_or(NO_SESSION, |s| s.0.id.as_str()).to_string(),
+    };
+    // Which hunks stage/discard can reach: those in HEAD → worktree.
+    let uncommitted: Option<HashMap<String, Vec<String>>> = match &range {
+        Some(r) if r.includes_worktree => Some(
+            crate::git::apply::hunks_for(&repo, None)?
+                .into_iter()
+                .map(|(p, f)| (p, f.hunks.into_iter().map(|h| h.id).collect()))
+                .collect(),
+        ),
+        Some(_) => Some(HashMap::new()),
+        None => None,
+    };
     let current: Vec<Current> = status
         .files
         .iter()
@@ -168,6 +192,7 @@ pub fn review_model(
                 viewed: review.viewed.contains_key(&f.path),
                 oid: scan.map_or_else(|| "deleted".into(), |s| s.worktree_oid.clone()),
                 hunk_ids: scan.map(|s| s.hunk_ids.clone()).unwrap_or_default(),
+                uncommitted: uncommitted.as_ref().map(|u| u.get(&f.path).cloned().unwrap_or_default()),
             };
             (f.path.clone(), meta)
         })
@@ -186,6 +211,7 @@ pub fn review_model(
             .unwrap_or_default(),
         session: chosen.map(|s| s.0.clone()),
         status,
+        range,
     })
 }
 

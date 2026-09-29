@@ -64,4 +64,26 @@ impl Fixture {
             .commit(Some("HEAD"), &sig, &sig, "fixture", &tree, &parents)
             .unwrap();
     }
+
+    /// Create `name` at HEAD without switching to it.
+    pub fn branch(&self, name: &str) {
+        let head = self.repo.head().unwrap().peel_to_commit().unwrap();
+        self.repo.branch(name, &head, false).unwrap();
+    }
+
+    /// Switch to branch `name`, resetting the worktree to its tip.
+    pub fn checkout(&self, name: &str) {
+        let refname = format!("refs/heads/{name}");
+        let obj = self.repo.revparse_single(&refname).unwrap();
+        let mut co = git2::build::CheckoutBuilder::new();
+        co.force().remove_untracked(true);
+        self.repo.checkout_tree(&obj, Some(&mut co)).unwrap();
+        self.repo.set_head(&refname).unwrap();
+    }
+
+    /// Point branch `name` at the commit `rev` resolves to (a force-push).
+    pub fn move_branch(&self, name: &str, rev: &str) {
+        let c = self.repo.revparse_single(rev).unwrap().peel_to_commit().unwrap();
+        self.repo.branch(name, &c, true).unwrap();
+    }
 }

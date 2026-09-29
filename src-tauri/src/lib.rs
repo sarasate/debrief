@@ -155,6 +155,21 @@ fn review_set_verdict(
     })
 }
 
+/// Local branches for the picker, with the detected base.
+#[tauri::command]
+fn target_list(state: State<RepoState>) -> AppResult<git::target::TargetList> {
+    git::target::list(&state.open()?)
+}
+
+/// Switch what is reviewed. Returns the resolved branch, or None for the
+/// working tree; an unresolvable branch leaves the target unchanged.
+#[tauri::command]
+fn target_set(target: git::target::Target, state: State<RepoState>) -> AppResult<Option<git::target::Range>> {
+    let range = git::target::resolve(&state.open()?, &target)?;
+    state.set_target(target)?;
+    Ok(range)
+}
+
 /// `a`: stage every cleared file, minus hunks marked revert.
 #[tauri::command]
 fn stage_cleared(
@@ -162,7 +177,9 @@ fn stage_cleared(
     state: State<RepoState>,
     store: State<ReviewStore>,
 ) -> AppResult<git::apply::StageResult> {
-    actions::stage_cleared(&state.open()?, &state.path()?, &store, &session_id)
+    let repo = state.open()?;
+    let range = git::target::resolve(&repo, &state.target())?;
+    actions::stage_cleared(&repo, &state.path()?, &store, &session_id, range.as_ref())
 }
 
 /// `d`, after the UI's confirmation: reverse-apply hunks marked revert.
@@ -172,7 +189,9 @@ fn discard_reverted(
     state: State<RepoState>,
     store: State<ReviewStore>,
 ) -> AppResult<git::apply::DiscardResult> {
-    actions::discard_reverted(&state.open()?, &state.path()?, &store, &session_id)
+    let repo = state.open()?;
+    let range = git::target::resolve(&repo, &state.target())?;
+    actions::discard_reverted(&repo, &state.path()?, &store, &session_id, range.as_ref())
 }
 
 #[tauri::command]
@@ -374,6 +393,8 @@ pub fn run() {
             review_model,
             review_set_viewed,
             review_set_verdict,
+            target_list,
+            target_set,
             stage_cleared,
             discard_reverted,
             notes_add,

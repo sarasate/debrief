@@ -1,4 +1,5 @@
-use super::diff::{delta_paths, delta_status, worktree_diff};
+use super::diff::{delta_paths, delta_status, review_diff};
+use super::target::{resolve, Range};
 use super::types::*;
 use crate::error::{AppError, AppResult};
 use crate::state::RepoState;
@@ -44,21 +45,28 @@ pub fn worktree_oid(workdir: &Path, path: &str) -> String {
 }
 
 pub fn repo_status(state: &RepoState) -> AppResult<RepoStatus> {
-    Ok(scan(&state.open()?, false)?.0)
+    let repo = state.open()?;
+    let range = resolve(&repo, &state.target())?;
+    Ok(scan(&repo, range.as_ref(), false)?.0)
 }
 
 /// Status plus, when `content` is set, a ContentScan per changed path.
-pub fn repo_status_scanned(repo: &Repository) -> AppResult<(RepoStatus, HashMap<String, ContentScan>)> {
-    scan(repo, true)
+pub fn repo_status_scanned(
+    repo: &Repository,
+    range: Option<&Range>,
+) -> AppResult<(RepoStatus, HashMap<String, ContentScan>)> {
+    scan(repo, range, true)
 }
 
-fn scan(repo: &Repository, content: bool) -> AppResult<(RepoStatus, HashMap<String, ContentScan>)> {
+fn scan(repo: &Repository, range: Option<&Range>, content: bool) -> AppResult<(RepoStatus, HashMap<String, ContentScan>)> {
+    // A branch that isn't checked out is read from its tip, not from disk.
+    let committed_only = range.is_some_and(|r| !r.includes_worktree);
     let workdir = repo
         .workdir()
         .ok_or_else(|| AppError::Other("bare repo not supported".into()))?
         .to_path_buf();
 
-    let diff = worktree_diff(repo)?;
+    let diff = review_diff(repo, range)?;
     let mut files = Vec::with_capacity(diff.deltas().len());
     let mut scans = HashMap::new();
     let (mut adds, mut dels) = (0, 0);
@@ -81,7 +89,12 @@ fn scan(repo: &Repository, content: bool) -> AppResult<(RepoStatus, HashMap<Stri
             let old = delta.old_file().id();
             let mut sc = ContentScan {
                 old_blob: (!old.is_zero()).then_some(old),
-                worktree_oid: worktree_oid(&workdir, &path),
+                worktree_oid: if committed_only {
+                    let id = delta.new_file().id();
+                    if id.is_zero() { "deleted".into() } else { id.to_string() }
+                } else {
+                    worktree_oid(&workdir, &path)
+                },
                 ..Default::default()
             };
             if let (Some(p), false) = (&patch, is_binary) {
@@ -93,7 +106,9 @@ fn scan(repo: &Repository, content: bool) -> AppResult<(RepoStatus, HashMap<Stri
         adds += a;
         dels += d;
 
-        if let Some(ms) = mtime_ms(&workdir.join(&path)) {
+        if committed_only {
+            // Files on disk belong to another checkout.
+        } else if let Some(ms) = mtime_ms(&workdir.join(&path)) {
             last_write = Some(last_write.map_or(ms, |cur| cur.max(ms)));
         }
 
@@ -107,7 +122,11 @@ fn scan(repo: &Repository, content: bool) -> AppResult<(RepoStatus, HashMap<Stri
         files,
         adds,
         dels,
-        last_write,
+        last_write: match range {
+            Some(r) if committed_only => Some(r.head_time),
+            Some(r) => Some(last_write.map_or(r.head_time, |w| w.max(r.head_time))),
+            None => last_write,
+        },
     };
     Ok((status, scans))
 }

@@ -1,4 +1,5 @@
 use crate::error::{AppError, AppResult};
+use crate::git::target::Target;
 use git2::Repository;
 use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
@@ -9,6 +10,8 @@ pub struct RepoState {
 
 pub struct RepoHandle {
     pub path: PathBuf,
+    /// What is being reviewed; opening a repo starts on its working tree.
+    pub target: Target,
 }
 
 impl RepoState {
@@ -17,7 +20,7 @@ impl RepoState {
     }
 
     pub fn set_path(&self, path: PathBuf) {
-        *self.inner.lock() = Some(RepoHandle { path });
+        *self.inner.lock() = Some(RepoHandle { path, target: Target::Worktree });
     }
 
     pub fn path(&self) -> AppResult<PathBuf> {
@@ -26,6 +29,17 @@ impl RepoState {
             .as_ref()
             .map(|h| h.path.clone())
             .ok_or(AppError::NoRepo)
+    }
+
+    pub fn target(&self) -> Target {
+        self.inner.lock().as_ref().map(|h| h.target.clone()).unwrap_or_default()
+    }
+
+    pub fn set_target(&self, target: Target) -> AppResult<()> {
+        let mut g = self.inner.lock();
+        let h = g.as_mut().ok_or(AppError::NoRepo)?;
+        h.target = target;
+        Ok(())
     }
 
     pub fn is_open(&self) -> bool {

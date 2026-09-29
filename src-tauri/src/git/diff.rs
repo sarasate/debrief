@@ -1,3 +1,4 @@
+use super::target::Range;
 use super::types::{DiffHunk, DiffLine, DiffLineKind, FileDiff, FileStatus};
 use crate::error::{AppError, AppResult};
 use crate::state::RepoState;
@@ -13,6 +14,25 @@ pub(crate) fn worktree_diff(repo: &Repository) -> AppResult<Diff<'_>> {
         Ok(h) => Some(h.peel_to_tree()?),
         Err(_) => None, // unborn branch: everything is new
     };
+    diff_from(repo, head_tree.as_ref(), None)
+}
+
+/// What the review shows: the working tree diff, or for a branch the
+/// merge-base against the tip (three-dot, as GitHub shows a PR), running on
+/// to the working tree when the branch is checked out.
+pub(crate) fn review_diff<'r>(repo: &'r Repository, range: Option<&Range>) -> AppResult<Diff<'r>> {
+    let Some(r) = range else { return worktree_diff(repo) };
+    let base = repo.find_commit(r.merge_base_oid()?)?.tree()?;
+    if r.includes_worktree {
+        return diff_from(repo, Some(&base), None);
+    }
+    let head = repo.find_commit(r.head_oid()?)?.tree()?;
+    diff_from(repo, Some(&base), Some(&head))
+}
+
+/// `old` against `new`, or against the working tree (index included) when
+/// `new` is None. Same options everywhere, so hunk ids agree.
+fn diff_from<'r>(repo: &'r Repository, old: Option<&git2::Tree>, new: Option<&git2::Tree>) -> AppResult<Diff<'r>> {
     let mut opts = DiffOptions::new();
     opts.include_untracked(true)
         .recurse_untracked_dirs(true)
@@ -20,7 +40,10 @@ pub(crate) fn worktree_diff(repo: &Repository) -> AppResult<Diff<'_>> {
         .include_ignored(false)
         .include_typechange(true)
         .context_lines(3);
-    let mut diff = repo.diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut opts))?;
+    let mut diff = match new {
+        Some(tree) => repo.diff_tree_to_tree(old, Some(tree), Some(&mut opts))?,
+        None => repo.diff_tree_to_workdir_with_index(old, Some(&mut opts))?,
+    };
     let mut find = DiffFindOptions::new();
     find.renames(true).for_untracked(true);
     diff.find_similar(Some(&mut find))?;
@@ -53,7 +76,8 @@ pub(crate) fn delta_paths(delta: &DiffDelta) -> (String, Option<String>) {
 
 pub fn diff_file(state: &RepoState, path: &str) -> AppResult<FileDiff> {
     let repo = state.open()?;
-    let diff = worktree_diff(&repo)?;
+    let range = super::target::resolve(&repo, &state.target())?;
+    let diff = review_diff(&repo, range.as_ref())?;
     for idx in 0..diff.deltas().len() {
         let Some(delta) = diff.get_delta(idx) else { continue };
         let Some(status) = delta_status(delta.status()) else { continue };

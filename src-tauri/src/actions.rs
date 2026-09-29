@@ -6,14 +6,36 @@
 use crate::error::AppResult;
 use crate::git::apply::{self, DiscardResult, Failure, StageResult};
 use crate::git::status::worktree_oid;
+use crate::git::target::Range;
+use crate::error::AppError;
 use crate::review_state::{DiscardRecord, ReviewStore, Verdict};
 use git2::Repository;
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 
+/// Stage and discard only ever touch the working tree (CLAUDE.md), so a
+/// branch review needs the branch checked out, and then reaches only its
+/// uncommitted part.
+fn writable(range: Option<&Range>) -> AppResult<()> {
+    match range {
+        Some(r) if !r.includes_worktree => Err(AppError::Input(format!(
+            "{} isn't checked out: its committed changes are read-only",
+            r.head
+        ))),
+        _ => Ok(()),
+    }
+}
+
 /// Stage every viewed file whose content is still what was viewed, minus
 /// hunks marked revert. Files changed since they were cleared are skipped.
-pub fn stage_cleared(repo: &Repository, workdir: &Path, store: &ReviewStore, key: &str) -> AppResult<StageResult> {
+pub fn stage_cleared(
+    repo: &Repository,
+    workdir: &Path,
+    store: &ReviewStore,
+    key: &str,
+    range: Option<&Range>,
+) -> AppResult<StageResult> {
+    writable(range)?;
     let st = store.load(repo.path(), key)?;
     let reverted: HashSet<String> =
         st.verdicts.iter().filter(|(_, v)| **v == Verdict::Revert).map(|(id, _)| id.clone()).collect();
@@ -27,6 +49,11 @@ pub fn stage_cleared(repo: &Repository, workdir: &Path, store: &ReviewStore, key
         }
     }
     let mut res = apply::stage(repo, workdir, &targets)?;
+    if range.is_some() {
+        for s in res.skipped.iter_mut().filter(|s| s.reason == "no longer changed") {
+            s.reason = "committed, nothing to stage".into();
+        }
+    }
     res.skipped.extend(stale.into_iter().map(|p| Failure {
         id: p.clone(),
         path: p,
@@ -37,10 +64,24 @@ pub fn stage_cleared(repo: &Repository, workdir: &Path, store: &ReviewStore, key
 
 /// Reverse-apply every hunk marked revert, then move viewed marks along with
 /// the files, so our own discard doesn't read as "changed since cleared".
-pub fn discard_reverted(repo: &Repository, workdir: &Path, store: &ReviewStore, key: &str) -> AppResult<DiscardResult> {
+pub fn discard_reverted(
+    repo: &Repository,
+    workdir: &Path,
+    store: &ReviewStore,
+    key: &str,
+    range: Option<&Range>,
+) -> AppResult<DiscardResult> {
+    writable(range)?;
     let st = store.load(repo.path(), key)?;
-    let ids: HashSet<String> =
+    let mut ids: HashSet<String> =
         st.verdicts.iter().filter(|(_, v)| **v == Verdict::Revert).map(|(id, _)| id.clone()).collect();
+    // In a branch review, committed hunks marked revert stay as requests
+    // for Claude; only the uncommitted ones can be undone here.
+    if range.is_some() {
+        let live: HashSet<String> =
+            apply::hunks_for(repo, None)?.into_values().flat_map(|f| f.hunks.into_iter().map(|h| h.id)).collect();
+        ids.retain(|id| live.contains(id));
+    }
     if ids.is_empty() {
         return Ok(DiscardResult::default());
     }
@@ -96,7 +137,7 @@ mod tests {
             .unwrap();
         fx.write("b.txt", "b3\n"); // changed after it was cleared
 
-        let staged = stage_cleared(&fx.repo, fx.root(), &store, NO_SESSION).unwrap();
+        let staged = stage_cleared(&fx.repo, fx.root(), &store, NO_SESSION, None).unwrap();
         assert_eq!(staged.staged, ["a.txt"]);
         assert_eq!(staged.skipped.iter().map(|s| (s.path.as_str(), s.reason.as_str())).collect::<Vec<_>>(), [("b.txt", "changed since cleared")]);
         let idx = fx.repo.index().unwrap();
@@ -104,7 +145,7 @@ mod tests {
         assert_eq!(blob("a.txt").unwrap(), base.replace("line 35\n", "bottom\n"), "reverted top hunk left unstaged");
         assert_eq!(blob("c.txt").unwrap(), "c\n", "uncleared file not staged");
 
-        let d = discard_reverted(&fx.repo, fx.root(), &store, NO_SESSION).unwrap();
+        let d = discard_reverted(&fx.repo, fx.root(), &store, NO_SESSION, None).unwrap();
         assert_eq!(d.discarded, [a.hunk_ids[0].clone()]);
         assert_eq!(std::fs::read_to_string(fx.root().join("a.txt")).unwrap(), base.replace("line 35\n", "bottom\n"));
 
@@ -125,8 +166,8 @@ mod tests {
         fx.commit(&[("a.txt", "a\n")]);
         fx.write("a.txt", "b\n");
         let store = ReviewStore::new();
-        assert!(discard_reverted(&fx.repo, fx.root(), &store, NO_SESSION).unwrap().discarded.is_empty());
-        assert!(stage_cleared(&fx.repo, fx.root(), &store, NO_SESSION).unwrap().staged.is_empty());
+        assert!(discard_reverted(&fx.repo, fx.root(), &store, NO_SESSION, None).unwrap().discarded.is_empty());
+        assert!(stage_cleared(&fx.repo, fx.root(), &store, NO_SESSION, None).unwrap().staged.is_empty());
         assert_eq!(std::fs::read_to_string(fx.root().join("a.txt")).unwrap(), "b\n");
     }
 }
