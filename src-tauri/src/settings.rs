@@ -1,4 +1,5 @@
 use crate::error::AppResult;
+use crate::review_state::TransmitMode;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -8,6 +9,12 @@ use std::path::PathBuf;
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     pub last_repo: Option<String>,
+    /// How `f` delivers notes (SPEC §6). Resume is opt-in: picking it is the
+    /// opt-in.
+    pub transmit_mode: TransmitMode,
+    /// Explicit path to the `claude` binary; found on PATH and the usual
+    /// install dirs when unset.
+    pub claude_path: Option<String>,
 }
 
 pub struct SettingsStore {
@@ -61,6 +68,16 @@ mod tests {
             .unwrap();
         let reloaded = SettingsStore::load(file);
         assert_eq!(reloaded.get().last_repo.as_deref(), Some("/tmp/repo"));
+    }
+
+    #[test]
+    fn m1_settings_file_still_loads_with_clipboard_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("settings.json");
+        std::fs::write(&file, r#"{"lastRepo":"/r"}"#).unwrap();
+        let s = SettingsStore::load(file).get();
+        assert_eq!(s.last_repo.as_deref(), Some("/r"));
+        assert_eq!(s.transmit_mode, TransmitMode::Clipboard);
     }
 
     #[test]
