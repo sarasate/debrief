@@ -56,13 +56,13 @@ export async function transmit(qc: QueryClient) {
   const ui = useUI.getState();
   const model = currentModel(qc);
   if (!model) return;
-  if (!model.notes.length && !model.unreportedDiscards) {
+  if (!model.notes.length && !model.unreportedDiscards && !model.pendingRequests) {
     ui.setOutput("nothing to transmit · n to write a note");
     return;
   }
   const force = Date.now() < ui.forceUntil;
   ui.setForceUntil(0);
-  const r = await api.notesTransmit(model.stateKey, force);
+  const r = await api.notesTransmit(model.stateKey, model.session?.id ?? null, force);
   const n = "notes" in r ? r.notes : 0;
   const sent = `transmitted ${n} note${n === 1 ? "" : "s"} to claude · awaiting next turn`;
   switch (r.status) {

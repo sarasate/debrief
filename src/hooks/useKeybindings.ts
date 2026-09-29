@@ -261,10 +261,12 @@ export async function runAction(action: string, qc: QueryClient) {
     case "tree.unfoldAll": ui.unfoldAll(); ui.setOutput("all folders unfolded"); return;
 
     // session and grouping
-    case "grouping.toggle":
-      ui.toggleGrouping();
-      ui.setOutput(useUI.getState().grouping === "intent" ? "grouped by intent" : "grouped by file tree");
+    case "grouping.toggle": {
+      ui.toggleGrouping(!!currentModel(qc)?.range);
+      const g = useUI.getState().grouping;
+      ui.setOutput(g === "intent" ? "grouped by intent" : g === "commit" ? "grouped by commit" : "grouped by file tree");
       return;
+    }
     case "palette.open": ui.openPalette("commands"); return;
     case "session.pick": ui.openPalette("sessions"); return;
     case "target.pick": ui.openPalette("targets"); return;

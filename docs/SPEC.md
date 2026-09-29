@@ -81,6 +81,8 @@ Edits recorded before the first prompt go to a placeholder turn 1. An edit that 
 Session selection: list every transcript in a project dir whose slug is the repo root's slug or starts with it plus `-`, then keep those whose first `cwd` is the repo root or inside it (the prefix match alone would also catch `repo-live` for `repo`). Drop sessions with no prompts and no edits. Newest first by the latest mtime of the transcript and its subagents. Default to the newest, and keep following the newest until one is picked with `:session`. The tape shows the `ai-title` (else the `summary` line, else the first prompt).
 
 ### 3.3 Intent groups
+**Branch reviews (M9).** Every ledger edit and turn carries the `gitBranch` of its transcript line (`HEAD` counts as none). A branch review uses the edits of *all* the repo's sessions made after the branch left its base; for a file with edits recorded on that branch, only those count. Turns from several sessions are ordered by prompt time and titled `S1 ·`, `S2 ·` (oldest session first), and "also touched in" names the session. A file no edit covers but that a branch commit with a `Co-Authored-By: …Claude…` / `@anthropic.com` trailer changed goes to a group for that commit (its body is the briefing) and isn't flagged unattributed. **BY COMMIT** (`t` cycles intent → commit → tree in a branch review): one group per non-merge commit, oldest first, a file under the last commit that changed it; UNCOMMITTED for files also changed past the tip; FROM MERGES for files only merges touched; GENERATED last.
+
 v1, deterministic: **one group per turn**. The group title is the turn prompt shortened to about 6 words and upper-cased; the briefing text is the turn's final assistant message. A file edited in several turns belongs to its **last** turn. The briefing also lists the other turns ("also touched in turn 2"). A renamed file matches ledger entries under its old or new path. Turns whose files are all clean (or committed) are left out.
 
 Fixed groups after the turns:
@@ -181,6 +183,8 @@ Modes (setting, default **clipboard**):
 2. **file**: write `.git/debrief/feedback.md` and copy `Read .git/debrief/feedback.md and address it.`
 3. **resume** (explicit opt-in): run `claude --resume <session-id> -p "<prompt>"` as a child process and stream the output into the command bar or an output drawer. Warn if the session looks active (its transcript was written in the last 60 s).
 
+In a branch review the header reads `(branch <head> ← <base>, session <id>, <n> notes)` and, before the reverted line, `Please revert these committed hunks in a new commit: <path> (hunk @@ … @@); …` for committed hunks marked revert; each is requested once (tracked in `requested`). Resume uses the session the model shows, not the state key.
+
 Once sent, notes move to `transmitted` and the queue empties. The command bar reads `transmitted n notes to claude · awaiting next turn`.
 
 Implementation notes (M6):
@@ -205,7 +209,7 @@ review_set_viewed(session_id, path, oid, viewed) -> ()  // session_id = model.st
 review_set_verdict(session_id, hunk_id, verdict | null) -> ()
 notes_add(session_id, path, hunk_id?, hunk_header?, text) -> Note
 notes_remove(session_id, id) -> ()
-notes_transmit(session_id, force) -> copied | written{path} | started | confirm{message}   // mode from settings
+notes_transmit(session_id, resume_session?, force) -> copied | written{path} | started | confirm{message}   // mode from settings; session_id = stateKey
 transmit_cancel() -> bool
 settings_get() / settings_set(transmit_mode?, claude_path?) -> Settings
 stage_cleared(session_id) -> { staged: string[], skipped: {path, reason}[] }

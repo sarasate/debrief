@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { PanelId } from "../lib/keymap";
 import type { Target } from "../lib/types";
 
-export type Grouping = "intent" | "tree";
+export type Grouping = "intent" | "commit" | "tree";
 export type FileFilter = "all" | "open" | "flagged";
 export type PaletteMode = "commands" | "sessions" | "targets";
 export type ModalId = "discard";
@@ -50,7 +50,9 @@ interface UIState {
   cyclePanel: (dir: 1 | -1) => void;
   setFilter: (f: FileFilter) => void;
   toggleMask: () => void;
-  toggleGrouping: () => void;
+  /** intent → commit → tree; commit only when a branch is under review. */
+  toggleGrouping: (hasBranch: boolean) => void;
+  setGrouping: (g: Grouping) => void;
   setSession: (id: string | null) => void;
   setTarget: (t: Target) => void;
   openPalette: (mode: PaletteMode | null) => void;
@@ -113,7 +115,13 @@ export const useUI = create<UIState>((set, get) => ({
   },
   setFilter: (f) => set({ filter: f }),
   toggleMask: () => set((s) => ({ maskNoise: !s.maskNoise })),
-  toggleGrouping: () => set((s) => ({ grouping: s.grouping === "intent" ? "tree" : "intent" })),
+  toggleGrouping: (hasBranch) =>
+    set((s) => {
+      const order: Grouping[] = hasBranch ? ["intent", "commit", "tree"] : ["intent", "tree"];
+      const i = order.indexOf(s.grouping);
+      return { grouping: order[(i + 1) % order.length] };
+    }),
+  setGrouping: (g) => set({ grouping: g }),
   setSession: (id) => set({ sessionId: id }),
   setTarget: (t) => set({ target: t }),
   openPalette: (mode) => set({ palette: mode }),

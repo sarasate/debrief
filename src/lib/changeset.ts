@@ -55,10 +55,15 @@ export function splitPath(path: string) {
   return { name: parts[parts.length - 1], dirs: parts.slice(0, -1) };
 }
 
-/** The intent group a path belongs to. */
-export function groupOf(model: ReviewModel | undefined, path: string | null): IntentGroup | undefined {
+/** The groups a grouping draws: commit groups for BY COMMIT in a branch review, else intent groups. */
+export function groupsFor(model: ReviewModel, grouping: Grouping): IntentGroup[] {
+  return grouping === "commit" && model.range ? model.commitGroups : model.groups;
+}
+
+/** The group a path belongs to in the current grouping (FILE TREE uses intent). */
+export function groupOf(model: ReviewModel | undefined, path: string | null, grouping: Grouping = "intent"): IntentGroup | undefined {
   if (!model || !path) return undefined;
-  return model.groups.find((g) => g.files.some((f) => f.path === path));
+  return groupsFor(model, grouping).find((g) => g.files.some((f) => f.path === path));
 }
 
 export function buildChangeset(model: ReviewModel | undefined, opts: ChangesetOpts): ChangesetView {
@@ -72,16 +77,16 @@ export function buildChangeset(model: ReviewModel | undefined, opts: ChangesetOp
     opts.filter === "open" ? isOpen(model, f.path) : opts.filter === "flagged" ? isFlagged(model, f.path) : true,
   );
   const rows =
-    opts.grouping === "intent" && model ? intentRows(model, visible) : treeRows(visible, opts.collapsed);
+    opts.grouping !== "tree" && model ? intentRows(groupsFor(model, opts.grouping), visible) : treeRows(visible, opts.collapsed);
   return { base, visible, noiseCount, ...rows };
 }
 
-function intentRows(model: ReviewModel, visible: ChangedFile[]) {
+function intentRows(groups: IntentGroup[], visible: ChangedFile[]) {
   const byPath = new Map(visible.map((f) => [f.path, f]));
   const rows: Row[] = [];
   const order: string[] = [];
   const placed = new Set<string>();
-  for (const g of model.groups) {
+  for (const g of groups) {
     const fs = g.files.flatMap((gf) => byPath.get(gf.path) ?? []);
     if (!fs.length) continue;
     rows.push({

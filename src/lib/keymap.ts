@@ -79,7 +79,7 @@ export const BINDINGS: Binding[] = [
   { key: "!", panel: "global", action: "flag.jump", desc: "Jump to flagged line", group: "FILTER" },
 
   // Session and grouping
-  { key: "t", panel: "global", action: "grouping.toggle", desc: "Group by intent / file tree", group: "SESSION", hint: { keys: "t", label: "tree" }, cmd: "tree" },
+  { key: "t", panel: "global", action: "grouping.toggle", desc: "Group by intent / commit / file tree", group: "SESSION", hint: { keys: "t", label: "tree" }, cmd: "tree" },
   { key: "B", panel: "global", action: "target.pick", desc: "Review a branch / the working tree", group: "SESSION", cmd: "target" },
   { key: "S", panel: "global", action: "session.pick", desc: "Pick Claude session", group: "SESSION", hint: { keys: ":session", label: "session" }, cmd: "session" },
   { key: ":", panel: "global", action: "palette.open", desc: "Command palette", group: "SESSION" },

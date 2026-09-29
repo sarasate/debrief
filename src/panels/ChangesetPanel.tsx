@@ -30,7 +30,21 @@ export function ChangesetPanel() {
   const total = data?.files.length ?? 0;
   const configError = model?.noise.error;
   const qc = useQueryClient();
-  const setGrouping = (g: Grouping) => grouping !== g && void runAction("grouping.toggle", qc);
+  const setGrouping = (g: Grouping) => {
+    if (grouping === g) return;
+    useUI.getState().setGrouping(g);
+    useUI.getState().setOutput(g === "intent" ? "grouped by intent" : g === "commit" ? "grouped by commit" : "grouped by file tree");
+  };
+  const modes: { id: Grouping; label: string }[] = model?.range
+    ? [
+        { id: "intent", label: "BY INTENT" },
+        { id: "commit", label: "BY COMMIT" },
+        { id: "tree", label: "FILE TREE" },
+      ]
+    : [
+        { id: "intent", label: "BY INTENT" },
+        { id: "tree", label: "FILE TREE" },
+      ];
 
   return (
     <HudFrame
@@ -62,21 +76,17 @@ export function ChangesetPanel() {
             className="flex-1 min-w-0 border-0 outline-none bg-transparent text-ink-light text-[12px] placeholder:text-ink-dimmer"
           />
         </label>
-        <div className="grid grid-cols-2 gap-[6px]">
-          <button
-            type="button"
-            onClick={() => setGrouping("intent")}
-            className={`dc-hov h-[30px] text-[10.5px] tracking-[0.16em] border ${pill(grouping === "intent")}`}
-          >
-            BY INTENT
-          </button>
-          <button
-            type="button"
-            onClick={() => setGrouping("tree")}
-            className={`dc-hov h-[30px] text-[10.5px] tracking-[0.16em] border ${pill(grouping === "tree")}`}
-          >
-            FILE TREE
-          </button>
+        <div className={`grid gap-[6px] ${modes.length === 3 ? "grid-cols-3" : "grid-cols-2"}`}>
+          {modes.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => setGrouping(m.id)}
+              className={`dc-hov h-[30px] text-[10.5px] tracking-[0.16em] border ${pill(grouping === m.id)}`}
+            >
+              {m.label}
+            </button>
+          ))}
         </div>
         <div className="flex gap-[6px]">
           {FILTERS.map((f) => (

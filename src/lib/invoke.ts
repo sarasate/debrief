@@ -41,7 +41,9 @@ export const api = {
   notesAdd: (sessionId: string, path: string, hunk: { id: string; header: string } | null, text: string) =>
     tauriInvoke<Note>("notes_add", { sessionId, path, hunkId: hunk?.id ?? null, hunkHeader: hunk?.header ?? null, text }),
   notesRemove: (sessionId: string, id: string) => tauriInvoke<void>("notes_remove", { sessionId, id }),
-  notesTransmit: (sessionId: string, force: boolean) => tauriInvoke<TransmitOutcome>("notes_transmit", { sessionId, force }),
+  /** `sessionId` is the state key; `resumeSession` the Claude session the feedback is for. */
+  notesTransmit: (sessionId: string, resumeSession: string | null, force: boolean) =>
+    tauriInvoke<TransmitOutcome>("notes_transmit", { sessionId, resumeSession, force }),
   transmitCancel: () => tauriInvoke<boolean>("transmit_cancel"),
   settingsGet: () => tauriInvoke<Settings>("settings_get"),
   /** `claudePath: ""` clears it back to auto-detect. */

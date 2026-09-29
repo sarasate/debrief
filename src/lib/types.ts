@@ -104,12 +104,29 @@ export interface Ledger {
   entries: LedgerEntry[];
 }
 
-export type GroupKind = "turn" | "unattributed" | "generated";
+export type GroupKind = "turn" | "commit" | "uncommitted" | "unattributed" | "generated";
+
+export interface TurnKey {
+  sessionId: string;
+  index: number;
+}
 
 export interface GroupFile {
   path: string;
   tools: EditTool[];
-  alsoTurns: number[];
+  alsoTurns: TurnKey[];
+  /** BY COMMIT: earlier commits (short sha) that also changed it. */
+  alsoCommits: string[];
+}
+
+export interface CommitRef {
+  sha: string;
+  short: string;
+  author: string;
+  /** ms since epoch */
+  time: number;
+  /** Has a Co-Authored-By: Claude trailer. */
+  claude: boolean;
 }
 
 export interface IntentGroup {
@@ -120,6 +137,8 @@ export interface IntentGroup {
   turn: number | null;
   prompt: string | null;
   files: GroupFile[];
+  sessionId: string | null;
+  commit: CommitRef | null;
 }
 
 // Noise (SPEC §3.4) and flags (§3.5)
@@ -188,7 +207,7 @@ export interface NoiseConfig {
 export interface ReviewModel {
   status: RepoStatus;
   session: SessionInfo | null;
-  turns: { index: number; title: string }[];
+  turns: { sessionId: string; index: number; title: string }[];
   groups: IntentGroup[];
   files: Record<string, FileMeta>;
   noise: NoiseConfig;
@@ -203,6 +222,10 @@ export interface ReviewModel {
   unreportedDiscards: number;
   /** The branch under review; null for the working tree. */
   range: Range | null;
+  /** BY COMMIT groups; empty in a worktree review. */
+  commitGroups: IntentGroup[];
+  /** Committed hunks marked revert the next transmit will ask Claude to revert. */
+  pendingRequests: number;
 }
 
 // Stage / discard (SPEC §5)

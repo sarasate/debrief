@@ -10,7 +10,8 @@ import { groupOf, splitPath } from "../lib/changeset";
 import { errText } from "../lib/invoke";
 import { keyFor } from "../lib/keymap";
 import { useUI } from "../store/ui";
-import type { DiffHunk, DiffLine, Verdict } from "../lib/types";
+import type { DiffHunk, DiffLine, TurnKey, Verdict } from "../lib/types";
+import { agoLabel } from "../hooks/useNow";
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
@@ -134,32 +135,63 @@ export function DiffPanel() {
 
 function Briefing({ path }: { path: string }) {
   const { data: model } = useReview();
-  const group = groupOf(model, path);
+  const grouping = useUI((s) => s.grouping);
+  const group = groupOf(model, path, grouping);
   const file = group?.files.find((f) => f.path === path);
-  const turnTitle = (i: number) => model?.turns.find((t) => t.index === i)?.title ?? "";
+  const sessions = new Set(model?.turns.map((t) => t.sessionId)).size;
+  const turnLabel = (k: TurnKey) => {
+    const t = model?.turns.find((x) => x.sessionId === k.sessionId && x.index === k.index);
+    const s = sessions > 1 ? `S${[...new Set(model!.turns.map((x) => x.sessionId))].indexOf(k.sessionId) + 1} ` : "";
+    return { text: `${s}turn ${k.index}`, title: t?.title ?? "" };
+  };
+  const commit = group?.commit;
+  // Commit groups speak for a commit, not for Claude, unless Claude co-authored it.
+  const agent = !commit || commit.claude;
 
   return (
-    <div className="flex-none flex flex-col gap-[5px] px-[13px] py-[11px] bg-sig-agent/[.07] border border-sig-agent/30">
-      <span className="text-[10px] tracking-[0.22em] text-sig-agent whitespace-nowrap overflow-hidden text-ellipsis">
-        AGENT BRIEFING · {group ? group.title : model ? "NOT IN ANY GROUP" : "SCANNING"}
+    <div
+      className={[
+        "flex-none flex flex-col gap-[5px] px-[13px] py-[11px] border",
+        agent ? "bg-sig-agent/[.07] border-sig-agent/30" : "bg-hud/[.04] border-hud/25",
+      ].join(" ")}
+    >
+      <span
+        className={[
+          "text-[10px] tracking-[0.22em] whitespace-nowrap overflow-hidden text-ellipsis",
+          agent ? "text-sig-agent" : "text-hud",
+        ].join(" ")}
+      >
+        {commit ? "COMMIT" : "AGENT BRIEFING"} · {group ? group.title : model ? "NOT IN ANY GROUP" : "SCANNING"}
       </span>
-      {group?.prompt && (
-        <span className="text-[11px] leading-[1.55] text-ink-dim whitespace-pre-wrap break-words">
-          <span className="text-sig-agent">TURN {group.turn} ›</span> {group.prompt}
+      {commit ? (
+        <span className="text-[11px] leading-[1.55] text-ink-dim">
+          <span className={agent ? "text-sig-agent" : "text-hud"}>{commit.short}</span> · {commit.author} ·{" "}
+          {agoLabel(commit.time, Date.now()).toLowerCase()}
+          {commit.claude && <span className="text-sig-agent"> · CO-AUTHORED BY CLAUDE</span>}
         </span>
+      ) : (
+        group?.prompt && (
+          <span className="text-[11px] leading-[1.55] text-ink-dim whitespace-pre-wrap break-words">
+            <span className="text-sig-agent">TURN {group.turn} ›</span> {group.prompt}
+          </span>
+        )
       )}
       <span className="text-[12px] leading-[1.6] text-ink-light whitespace-pre-wrap break-words">
         {group?.briefing ?? "No briefing for this file."}
       </span>
-      {file && (file.tools.length > 0 || file.alsoTurns.length > 0) && (
+      {file && (file.tools.length > 0 || file.alsoTurns.length > 0 || file.alsoCommits.length > 0) && (
         <span className="text-[10.5px] tracking-[0.08em] text-ink-faint">
           {file.tools.length > 0 && <>via {file.tools.join(", ")}</>}
-          {file.alsoTurns.map((t) => (
-            <span key={t}>
-              {" · "}also touched in turn {t}
-              {turnTitle(t) && <span className="text-ink-dim"> ({turnTitle(t)})</span>}
-            </span>
-          ))}
+          {file.alsoTurns.map((k) => {
+            const l = turnLabel(k);
+            return (
+              <span key={k.sessionId + ":" + k.index}>
+                {" · "}also touched in {l.text}
+                {l.title && <span className="text-ink-dim"> ({l.title})</span>}
+              </span>
+            );
+          })}
+          {file.alsoCommits.length > 0 && <> · also in {file.alsoCommits.join(", ")}</>}
         </span>
       )}
     </div>

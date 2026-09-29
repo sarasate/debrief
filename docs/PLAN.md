@@ -62,7 +62,7 @@ enum Target {
 **Review state per target.** `.git/debrief/<key>.json`, with `key` = session id (worktree, as today) or `branch-<sha1(head-ref + base)>` for a range. Viewed marks store the **blob oid at `head`** instead of the worktree file, so a new commit that touches a cleared file reopens it, and a force-push or rebase that leaves the file unchanged keeps it cleared.
 
 **Attribution across a branch.** One branch is usually several sessions:
-1. Sessions: every transcript for the repo whose lines carry `gitBranch == <branch>`, with activity after the merge-base commit time. The parser has to start reading `gitBranch`; it's on every line in real transcripts, and is `HEAD` when detached.
+1. Edits, not sessions (changed during M9): every ledger edit records the `gitBranch` of its own line (`HEAD` means none). A branch takes the edits of all repo sessions made after the merge-base commit time; for any file with edits recorded on the branch itself, only those count. Filtering whole sessions by branch would have been wrong: a real session made 21 edits on `main`, then switched to the feature branch for 9 more, and its first branch commit held the `main` edits.
 2. The ledger is the union of those sessions' edits. `drop_committed` (right for the worktree, where committed work can't explain what's dirty) is **off** in range mode, since committed work is exactly what's being reviewed.
 3. A commit whose message has a `Co-Authored-By: Claude` trailer counts as Claude's even without a ledger entry. That covers `Bash` side effects and sessions whose transcript is gone.
 4. Anything else is UNATTRIBUTED, as today.

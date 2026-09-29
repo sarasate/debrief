@@ -17,6 +17,7 @@ export function NotesPanel() {
   const qc = useQueryClient();
   const { data: notes = [] } = useReview((m) => m.notes);
   const { data: discards = 0 } = useReview((m) => m.unreportedDiscards);
+  const { data: requests = 0 } = useReview((m) => m.pendingRequests);
   const { data: settings } = useSettings();
   const focus = useUI((s) => s.focus);
   const cursor = useUI((s) => s.notesCursor);
@@ -27,7 +28,7 @@ export function NotesPanel() {
   useUI((s) => [s.hunkId, s.hunkPinned, s.noteScope].join());
   useDiffFile(path);
   const target = noteTarget(qc);
-  const canSend = (notes.length > 0 || discards > 0) && !running;
+  const canSend = (notes.length > 0 || discards > 0 || requests > 0) && !running;
 
   const guard = (p: Promise<unknown>) => p.catch((e) => useUI.getState().emitToast("err", errText(e)));
 
@@ -77,6 +78,11 @@ export function NotesPanel() {
         {notes.length === 0 && (
           <div className="px-[10px] py-[14px] border border-dashed border-hud/20 text-[11px] leading-[1.6] text-ink-faint">
             No notes queued. Notes are sent to the Claude session as one batch.
+          </div>
+        )}
+        {requests > 0 && (
+          <div className="text-[10.5px] tracking-[0.08em] text-sig-agent">
+            + {requests} committed hunk{requests === 1 ? "" : "s"} marked revert: Claude will be asked to revert {requests === 1 ? "it" : "them"} in a new commit
           </div>
         )}
         {discards > 0 && (

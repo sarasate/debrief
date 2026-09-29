@@ -9,6 +9,8 @@ export async function switchTarget(qc: QueryClient, target: Target) {
   const range = await api.targetSet(target);
   const ui = useUI.getState();
   ui.setTarget(target);
+  // BY COMMIT only exists for a branch.
+  if (!range && ui.grouping === "commit") ui.setGrouping("intent");
   ui.select(null);
   ui.unfoldAll();
   await qc.invalidateQueries({ queryKey: ["repo"] });
