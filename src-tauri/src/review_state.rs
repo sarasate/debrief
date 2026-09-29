@@ -71,7 +71,6 @@ impl ReviewStore {
         Self { lock: Mutex::new(()) }
     }
 
-    #[cfg(test)]
     pub fn load(&self, git_dir: &Path, session: &str) -> AppResult<ReviewState> {
         let _g = self.lock.lock();
         read(&state_file(git_dir, session)?, session)

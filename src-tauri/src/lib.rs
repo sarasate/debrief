@@ -1,3 +1,4 @@
+mod actions;
 mod error;
 mod flags;
 mod git;
@@ -148,6 +149,26 @@ fn review_set_verdict(
     })
 }
 
+/// `a`: stage every cleared file, minus hunks marked revert.
+#[tauri::command]
+fn stage_cleared(
+    session_id: String,
+    state: State<RepoState>,
+    store: State<ReviewStore>,
+) -> AppResult<git::apply::StageResult> {
+    actions::stage_cleared(&state.open()?, &state.path()?, &store, &session_id)
+}
+
+/// `d`, after the UI's confirmation: reverse-apply hunks marked revert.
+#[tauri::command]
+fn discard_reverted(
+    session_id: String,
+    state: State<RepoState>,
+    store: State<ReviewStore>,
+) -> AppResult<git::apply::DiscardResult> {
+    actions::discard_reverted(&state.open()?, &state.path()?, &store, &session_id)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let result = tauri::Builder::default()
@@ -182,6 +203,8 @@ pub fn run() {
             review_model,
             review_set_viewed,
             review_set_verdict,
+            stage_cleared,
+            discard_reverted,
         ])
         .run(tauri::generate_context!());
     if let Err(e) = result {
