@@ -1,9 +1,10 @@
-export type PanelId = "changeset" | "diff";
+export type PanelId = "changeset" | "diff" | "notes";
 
-export type HelpGroup = "NAVIGATION" | "REVIEW" | "DIFF" | "FILTER" | "SESSION" | "GLOBAL";
+export type HelpGroup = "NAVIGATION" | "REVIEW" | "NOTES" | "DIFF" | "FILTER" | "SESSION" | "GLOBAL";
 
 export interface Binding {
-  key: string; // KeyboardEvent.key, or "ctrl+x"
+  /** KeyboardEvent.key, or "ctrl+x"; "" for palette-only commands. */
+  key: string;
   panel: PanelId | "global";
   action: string; // logical action id
   desc: string;
@@ -33,13 +34,26 @@ export const BINDINGS: Binding[] = [
   { key: "h", panel: "global", action: "focus.prev", desc: "Previous panel", group: "NAVIGATION" },
   { key: "ArrowLeft", panel: "global", action: "focus.prev", desc: "Previous panel", group: "NAVIGATION" },
 
-  // Review (SPEC §5). Notes and transmit arrive in M6.
+  // Review (SPEC §5)
   { key: " ", panel: "global", action: "file.clear", desc: "Clear & next open file", group: "REVIEW", hint: { keys: "spc", label: "clear" } },
   { key: "v", panel: "global", action: "file.viewed", desc: "Toggle viewed", group: "REVIEW" },
   { key: "y", panel: "global", action: "hunk.keep", desc: "Keep hunk (again: undecided)", group: "REVIEW", hint: { keys: "y", label: "keep" } },
   { key: "x", panel: "global", action: "hunk.revert", desc: "Mark hunk for revert (again: undecided)", group: "REVIEW", hint: { keys: "x", label: "revert" } },
   { key: "a", panel: "global", action: "ops.stage", desc: "Stage cleared files (minus reverted hunks)", group: "REVIEW", cmd: "stage" },
   { key: "d", panel: "global", action: "ops.discard", desc: "Discard reverted hunks (asks first)", group: "REVIEW", cmd: "discard" },
+
+  // Field notes (SPEC §6)
+  { key: "n", panel: "global", action: "note.new", desc: "Note on hunk under cursor (else file)", group: "NOTES", hint: { keys: "n", label: "note" } },
+  { key: "N", panel: "global", action: "note.newFile", desc: "Note on the whole file", group: "NOTES" },
+  { key: "f", panel: "global", action: "notes.transmit", desc: "Transmit notes to Claude", group: "NOTES", hint: { keys: "f", label: "transmit" }, cmd: "transmit" },
+  { key: "j", panel: "notes", action: "notes.down", desc: "Next queued note", group: "NOTES" },
+  { key: "k", panel: "notes", action: "notes.up", desc: "Previous queued note", group: "NOTES" },
+  { key: "Backspace", panel: "notes", action: "notes.remove", desc: "Remove queued note", group: "NOTES" },
+  { key: "Delete", panel: "notes", action: "notes.remove", desc: "Remove queued note", group: "NOTES" },
+  { key: "ctrl+c", panel: "global", action: "transmit.cancel", desc: "Stop a running resume", group: "NOTES" },
+  { key: "", panel: "global", action: "mode.clipboard", desc: "Transmit mode: clipboard", group: "NOTES", cmd: "transmit-mode clipboard" },
+  { key: "", panel: "global", action: "mode.file", desc: "Transmit mode: .git/debrief/feedback.md", group: "NOTES", cmd: "transmit-mode file" },
+  { key: "", panel: "global", action: "mode.resume", desc: "Transmit mode: claude --resume (opt-in)", group: "NOTES", cmd: "transmit-mode resume" },
 
   // Diff — vim scrolling, as in git-ui
   { key: "j", panel: "diff", action: "diff.lineDown", desc: "Line down", group: "DIFF" },
@@ -76,6 +90,7 @@ export const BINDINGS: Binding[] = [
 ];
 
 export function findBinding(panel: PanelId, key: string): Binding | undefined {
+  if (!key) return undefined;
   return (
     BINDINGS.find((b) => b.panel === panel && b.key === key) ||
     BINDINGS.find((b) => b.panel === "global" && b.key === key)

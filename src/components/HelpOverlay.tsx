@@ -1,7 +1,7 @@
 import { useUI } from "../store/ui";
 import { BINDINGS, keyLabel, type HelpGroup } from "../lib/keymap";
 
-const ORDER: HelpGroup[] = ["NAVIGATION", "REVIEW", "DIFF", "FILTER", "SESSION", "GLOBAL"];
+const ORDER: HelpGroup[] = ["NAVIGATION", "REVIEW", "NOTES", "DIFF", "FILTER", "SESSION", "GLOBAL"];
 
 /** One row per (group, desc), listing every key bound to it. */
 function rows(group: HelpGroup) {
@@ -9,7 +9,7 @@ function rows(group: HelpGroup) {
   for (const b of BINDINGS) {
     if (b.group !== group) continue;
     const row = out.find((r) => r.label === b.desc);
-    const k = keyLabel(b.key);
+    const k = b.key ? keyLabel(b.key) : ":" + b.cmd;
     if (!row) out.push({ label: b.desc, keys: [k] });
     else if (!row.keys.includes(k)) row.keys.push(k);
   }

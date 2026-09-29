@@ -9,6 +9,8 @@ import { pageLines, reveal, scrollPanelByLines, scrollPanelTo } from "../lib/scr
 import { QK } from "./useRepo";
 import type { FileDiff, ReviewModel, Verdict } from "../lib/types";
 import { currentModel, revertTargets, setVerdict, setViewed, stageCleared } from "../lib/review";
+import { focusComposer, removeNote, setTransmitMode, transmit } from "../lib/notes";
+import { api } from "../lib/invoke";
 
 export function useKeybindings() {
   const qc = useQueryClient();
@@ -162,6 +164,35 @@ export async function runAction(action: string, qc: QueryClient) {
       return;
     }
 
+    // notes
+    case "note.new":
+    case "note.newFile":
+      if (!ui.selectedPath) { ui.setOutput("select a file to write a note on"); return; }
+      focusComposer(action === "note.newFile" ? "file" : "auto");
+      return;
+    case "notes.transmit": await transmit(qc); return;
+    case "notes.down":
+    case "notes.up": {
+      const n = currentModel(qc)?.notes.length ?? 0;
+      if (!n) return;
+      const d = action === "notes.down" ? 1 : -1;
+      ui.setNotesCursor(Math.max(0, Math.min(n - 1, ui.notesCursor + d)));
+      return;
+    }
+    case "notes.remove": {
+      const note = currentModel(qc)?.notes[ui.notesCursor];
+      if (!note) return;
+      await removeNote(qc, note.id);
+      ui.setNotesCursor(Math.max(0, ui.notesCursor - 1));
+      return;
+    }
+    case "transmit.cancel":
+      if (await api.transmitCancel()) ui.setOutput("resume stopped · notes stay queued");
+      return;
+    case "mode.clipboard": await setTransmitMode(qc, "clipboard"); return;
+    case "mode.file": await setTransmitMode(qc, "file"); return;
+    case "mode.resume": await setTransmitMode(qc, "resume"); return;
+
     case "ops.stage": await stageCleared(qc); return;
     case "ops.discard":
       if (!revertTargets(currentModel(qc)).length) { ui.setOutput("no hunks marked revert · x to mark one"); return; }
@@ -245,6 +276,7 @@ export async function runAction(action: string, qc: QueryClient) {
     case "help.toggle": ui.toggleHelp(); return;
     case "close":
       if (ui.palette) ui.openPalette(null);
+      else if (ui.transmit && !ui.transmit.running) ui.setTransmit(null);
       else if (ui.helpOpen) ui.toggleHelp();
       return;
   }

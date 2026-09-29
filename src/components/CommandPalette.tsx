@@ -42,7 +42,7 @@ export function CommandPalette() {
         (c) => ({
           key: c.action,
           label: ":" + c.cmd,
-          detail: `${c.desc.toLowerCase()} · ${keyLabel(c.key)}`,
+          detail: c.key ? `${c.desc.toLowerCase()} · ${keyLabel(c.key)}` : c.desc.toLowerCase(),
           run: async () => {
             // `:session` swaps the palette over instead of closing it.
             if (c.action !== "session.pick") close();
