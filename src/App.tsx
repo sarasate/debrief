@@ -7,13 +7,14 @@ import { HelpOverlay } from "./components/HelpOverlay";
 import { CommandPalette } from "./components/CommandPalette";
 import { DiscardModal } from "./components/DiscardModal";
 import { OutputDrawer } from "./components/OutputDrawer";
+import { BootSequence } from "./components/BootSequence";
 import { Toast } from "./components/Toast";
 import { ChangesetPanel } from "./panels/ChangesetPanel";
 import { DiffPanel } from "./panels/DiffPanel";
 import { OpsPanel } from "./panels/OpsPanel";
 import { NotesPanel } from "./panels/NotesPanel";
 import { useKeybindings, runAction } from "./hooks/useKeybindings";
-import { useChangeset, useRepoCurrent, useReview, useStatus } from "./hooks/useRepo";
+import { useChangeset, useRepoCurrent, useReview, useSettings, useStatus } from "./hooks/useRepo";
 import { keyLabel } from "./lib/keymap";
 import { useUI } from "./store/ui";
 
@@ -24,6 +25,7 @@ export default function App() {
   useSelectionSync();
   useInvalidationNotice();
   useTransmitEvents();
+  useLook();
 
   // Repo-watcher event
   useEffect(() => {
@@ -65,6 +67,7 @@ export default function App() {
       <DiscardModal />
       <HelpOverlay />
       <Toast />
+      <BootSequence />
     </div>
   );
 }
@@ -79,6 +82,16 @@ function useSelectionSync() {
     const exists = !!selected && data.files.some((f) => f.path === selected);
     if (!exists) useUI.getState().select(order[0] ?? null);
   }, [data, order, selected]);
+}
+
+/** Accent and scanlines from settings, as attributes hud.css keys on. */
+function useLook() {
+  const { data } = useSettings();
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.accent = data?.accent ?? "cyan";
+    root.dataset.scanlines = data?.scanlines === false ? "off" : "on";
+  }, [data?.accent, data?.scanlines]);
 }
 
 const MAX_DRAWER_LINES = 2000;

@@ -2,9 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useUI } from "../store/ui";
 import { BINDINGS, keyLabel } from "../lib/keymap";
-import { errText } from "../lib/invoke";
+import { api, errText } from "../lib/invoke";
 import { runAction } from "../hooks/useKeybindings";
-import { useReview, useSessions } from "../hooks/useRepo";
+import { QK, useReview, useSessions } from "../hooks/useRepo";
 import { agoLabel } from "../hooks/useNow";
 
 interface Item {
@@ -38,12 +38,35 @@ export function CommandPalette() {
   const items = useMemo<Item[]>(() => {
     const needle = q.trim().toLowerCase();
     if (mode === "commands") {
+      // The one command with an argument: `claude-path <path>`, case kept.
+      const arg = /^:?claude-path(?:\s+(.*))?$/i.exec(q.trim());
+      if (arg) {
+        const path = (arg[1] ?? "").trim();
+        return [
+          {
+            key: "claude-path",
+            label: ":claude-path " + (path || "(auto-detect)"),
+            detail: path ? "use this claude binary for resume mode" : "clear the setting and search PATH and the usual install dirs",
+            run: async () => {
+              close();
+              qc.setQueryData(QK.settings, await api.settingsSet({ claudePath: path }));
+              useUI.getState().setOutput(path ? "claude path · " + path : "claude path · auto-detect");
+            },
+          },
+        ];
+      }
       return COMMANDS.filter((c) => !needle || c.cmd.includes(needle) || c.desc.toLowerCase().includes(needle)).map(
         (c) => ({
           key: c.action,
           label: ":" + c.cmd,
           detail: c.key ? `${c.desc.toLowerCase()} · ${keyLabel(c.key)}` : c.desc.toLowerCase(),
           run: async () => {
+            // Takes an argument: pre-fill it and keep the palette open.
+            if (c.action === "settings.claudePath") {
+              setQ("claude-path ");
+              inputRef.current?.focus();
+              return;
+            }
             // `:session` swaps the palette over instead of closing it.
             if (c.action !== "session.pick") close();
             await runAction(c.action, qc);
@@ -112,7 +135,7 @@ export function CommandPalette() {
               if (e.key === "ArrowUp") { e.preventDefault(); setSel((s) => Math.max(0, s - 1)); }
               if (e.key === "Enter" && items[sel]) { e.preventDefault(); void exec(items[sel]); }
             }}
-            placeholder={mode === "sessions" ? "filter sessions by title…" : "session · tree · refresh · open · help …"}
+            placeholder={mode === "sessions" ? "filter sessions by title…" : "session · tree · transmit-mode · accent · claude-path … · help"}
             className="flex-1 bg-transparent border-none outline-none text-[15px] text-ink-bright placeholder:text-ink-dimmer"
           />
           {mode === "sessions" && (

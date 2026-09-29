@@ -202,10 +202,14 @@ export interface Note {
 
 export type TransmitMode = "clipboard" | "file" | "resume";
 
+export type Accent = "cyan" | "green" | "amber" | "red";
+
 export interface Settings {
   lastRepo: string | null;
   transmitMode: TransmitMode;
   claudePath: string | null;
+  accent: Accent;
+  scanlines: boolean;
 }
 
 export type TransmitOutcome =

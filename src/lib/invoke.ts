@@ -1,6 +1,7 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import type {
   DiscardResult,
+  Accent,
   FileDiff,
   Note,
   Settings,
@@ -38,8 +39,14 @@ export const api = {
   notesTransmit: (sessionId: string, force: boolean) => tauriInvoke<TransmitOutcome>("notes_transmit", { sessionId, force }),
   transmitCancel: () => tauriInvoke<boolean>("transmit_cancel"),
   settingsGet: () => tauriInvoke<Settings>("settings_get"),
-  settingsSet: (patch: { transmitMode?: TransmitMode; claudePath?: string }) =>
-    tauriInvoke<Settings>("settings_set", { transmitMode: patch.transmitMode ?? null, claudePath: patch.claudePath ?? null }),
+  /** `claudePath: ""` clears it back to auto-detect. */
+  settingsSet: (patch: { transmitMode?: TransmitMode; claudePath?: string; accent?: Accent; scanlines?: boolean }) =>
+    tauriInvoke<Settings>("settings_set", {
+      transmitMode: patch.transmitMode ?? null,
+      claudePath: patch.claudePath ?? null,
+      accent: patch.accent ?? null,
+      scanlines: patch.scanlines ?? null,
+    }),
 };
 
 /** Tauri rejects with the serialized AppError, which is a plain string. */

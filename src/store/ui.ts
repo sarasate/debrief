@@ -22,6 +22,8 @@ interface UIState {
   /** The reviewer moved the cursor to this hunk (vs. the automatic first
    * hunk), so `n` scopes a note to it. */
   hunkPinned: boolean;
+  /** Hunks over the large-diff limit that the reviewer opened. */
+  expanded: Record<string, boolean>;
   noteDraft: string;
   /** "file" after N: the next note ignores the hunk cursor. */
   noteScope: "auto" | "file";
@@ -36,6 +38,7 @@ interface UIState {
   palette: PaletteMode | null;
   modal: ModalId | null;
   helpOpen: boolean;
+  booting: boolean;
   toast: { kind: "ok" | "err"; text: string; id: number } | null;
   errPanel: PanelId | null;
   output: string;
@@ -54,12 +57,14 @@ interface UIState {
   unfoldAll: () => void;
   select: (path: string | null) => void;
   setHunk: (id: string | null, pinned?: boolean) => void;
+  toggleExpanded: (id: string, open?: boolean) => void;
   setNoteDraft: (t: string) => void;
   setNoteScope: (s: "auto" | "file") => void;
   setNotesCursor: (i: number) => void;
   setTransmit: (t: UIState["transmit"]) => void;
   setForceUntil: (t: number) => void;
   toggleHelp: () => void;
+  finishBoot: () => void;
   setOutput: (text: string) => void;
   emitToast: (kind: "ok" | "err", text: string) => void;
   clearToast: () => void;
@@ -80,6 +85,7 @@ export const useUI = create<UIState>((set, get) => ({
   selectedPath: null,
   hunkId: null,
   hunkPinned: false,
+  expanded: {},
   noteDraft: "",
   noteScope: "auto",
   notesCursor: 0,
@@ -89,6 +95,7 @@ export const useUI = create<UIState>((set, get) => ({
   palette: null,
   modal: null,
   helpOpen: false,
+  booting: true,
   toast: null,
   errPanel: null,
   output: "system ready · awaiting input",
@@ -114,12 +121,14 @@ export const useUI = create<UIState>((set, get) => ({
   select: (path) =>
     set((s) => (s.selectedPath === path ? {} : { selectedPath: path, hunkId: null, hunkPinned: false })),
   setHunk: (id, pinned = true) => set({ hunkId: id, hunkPinned: pinned && id != null }),
+  toggleExpanded: (id, open) => set((s) => ({ expanded: { ...s.expanded, [id]: open ?? !s.expanded[id] } })),
   setNoteDraft: (t) => set({ noteDraft: t }),
   setNoteScope: (s) => set({ noteScope: s }),
   setNotesCursor: (i) => set({ notesCursor: i }),
   setTransmit: (t) => set({ transmit: t }),
   setForceUntil: (t) => set({ forceUntil: t }),
   toggleHelp: () => set((s) => ({ helpOpen: !s.helpOpen })),
+  finishBoot: () => set({ booting: false }),
   setOutput: (text) => set({ output: text }),
   emitToast: (kind, text) => set({ toast: { kind, text, id: Date.now() } }),
   clearToast: () => set({ toast: null }),

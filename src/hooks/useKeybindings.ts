@@ -7,10 +7,11 @@ import { errText } from "../lib/invoke";
 import { openRepoDialog } from "../lib/openRepo";
 import { pageLines, reveal, scrollPanelByLines, scrollPanelTo } from "../lib/scroll";
 import { QK } from "./useRepo";
-import type { FileDiff, ReviewModel, Verdict } from "../lib/types";
+import type { Accent, FileDiff, ReviewModel, Settings, Verdict } from "../lib/types";
 import { currentModel, revertTargets, setVerdict, setViewed, stageCleared } from "../lib/review";
 import { focusComposer, removeNote, setTransmitMode, transmit } from "../lib/notes";
 import { api } from "../lib/invoke";
+import { COLLAPSE_LINES } from "../lib/highlight";
 
 export function useKeybindings() {
   const qc = useQueryClient();
@@ -27,6 +28,7 @@ export function useKeybindings() {
       if (t && t !== document.body && (t.tagName === "BUTTON" || t.tagName === "INPUT")) t.blur();
 
       const ui = useUI.getState();
+      if (ui.booting) return; // BootSequence handles its own keys
 
       // Cmd/Ctrl-O — open repo
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "o" && !e.altKey && !e.shiftKey) {
@@ -91,8 +93,16 @@ function step(order: string[], cur: string | null, delta: 1 | -1): string | null
   return order[before < 0 ? order.length - 1 : before];
 }
 
-/** Scroll the diff to a new-side line number and select its hunk. */
+/** Scroll the diff to a new-side line number and select its hunk,
+ * expanding a collapsed large hunk first. */
 export function jumpToLine(line: number) {
+  const hunks = [...document.querySelectorAll<HTMLElement>('[data-panel-scroll="diff"] [data-hunk]')];
+  const holder = hunks.find((h) => Number(h.dataset.newStart) <= line && line <= Number(h.dataset.newEnd));
+  if (holder && !holder.querySelector("[data-line]")) {
+    useUI.getState().toggleExpanded(holder.dataset.hunk!, true);
+    requestAnimationFrame(() => requestAnimationFrame(() => jumpToLine(line)));
+    return;
+  }
   const el = document.querySelector<HTMLElement>(`[data-panel-scroll="diff"] [data-new-line="${line}"]`);
   if (!el) { useUI.getState().setOutput(`line ${line} is outside the diff`); return; }
   const hunk = el.closest<HTMLElement>("[data-hunk]")?.dataset.hunk;
@@ -192,6 +202,21 @@ export async function runAction(action: string, qc: QueryClient) {
     case "mode.clipboard": await setTransmitMode(qc, "clipboard"); return;
     case "mode.file": await setTransmitMode(qc, "file"); return;
     case "mode.resume": await setTransmitMode(qc, "resume"); return;
+    case "accent.cyan":
+    case "accent.green":
+    case "accent.amber":
+    case "accent.red": {
+      const accent = action.split(".")[1] as Accent;
+      qc.setQueryData(QK.settings, await api.settingsSet({ accent }));
+      ui.setOutput("accent · " + accent);
+      return;
+    }
+    case "scanlines.toggle": {
+      const on = !(qc.getQueryData<Settings>(QK.settings)?.scanlines ?? true);
+      qc.setQueryData(QK.settings, await api.settingsSet({ scanlines: on }));
+      ui.setOutput("scanlines " + (on ? "on" : "off"));
+      return;
+    }
 
     case "ops.stage": await stageCleared(qc); return;
     case "ops.discard":
@@ -232,6 +257,15 @@ export async function runAction(action: string, qc: QueryClient) {
     case "diff.halfUp": scrollPanelByLines("diff", -Math.ceil(pageLines("diff") / 2)); return;
     case "diff.pageDown": scrollPanelByLines("diff", pageLines("diff")); return;
     case "diff.pageUp": scrollPanelByLines("diff", -pageLines("diff")); return;
+    case "hunk.expand": {
+      const diff = qc.getQueryData<FileDiff>(QK.diffFile(ui.selectedPath));
+      const h = diff?.hunks.find((x) => x.id === ui.hunkId);
+      if (!h) return;
+      if (h.lines.length <= COLLAPSE_LINES) { ui.setOutput("this hunk isn't collapsed"); return; }
+      ui.toggleExpanded(h.id);
+      ui.setOutput(`${useUI.getState().expanded[h.id] ? "expanded" : "collapsed"} hunk · ${h.lines.length} lines`);
+      return;
+    }
     case "hunk.next":
     case "hunk.prev": {
       const diff = qc.getQueryData<FileDiff>(QK.diffFile(ui.selectedPath));

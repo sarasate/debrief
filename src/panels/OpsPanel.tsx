@@ -14,7 +14,7 @@ export function OpsPanel() {
   const p = progress(data);
 
   return (
-    <HudFrame title="Ops console" className="flex-none" badge={<span className="text-[10.5px] text-hud">{p.pct}%</span>}>
+    <HudFrame title="Ops console" className="flex-none" badge={<span className="text-[10.5px] text-hud">{p.total ? `${p.pct}%` : "—"}</span>}>
       <div className="flex flex-col gap-3 px-[13px] py-[14px]">
         <div className="flex justify-between text-[10.5px] tracking-[0.14em] text-ink-dim">
           <span>FILES CLEARED</span>
@@ -25,6 +25,11 @@ export function OpsPanel() {
         <div className="h-2 p-px bg-bg-deep border border-hud/20">
           <div className="h-1 bg-hud transition-[width] duration-300 shadow-[0_0_10px_var(--ac)]" style={{ width: `${p.pct}%` }} />
         </div>
+        {p.total > 0 && p.viewed === p.total && (
+          <div className="px-[10px] py-[7px] border border-hud/40 bg-hud/[.08] text-[10.5px] tracking-[0.16em] text-hud">
+            ALL CLEAR · {p.pending ? `${p.pending} HUNK${p.pending === 1 ? "" : "S"} UNDECIDED · ` : ""}A TO STAGE
+          </div>
+        )}
         <div className="grid grid-cols-3 gap-[6px]">
           <Counter value={p.kept} label="KEPT" cls="text-sig-ok" />
           <Counter value={p.reverted} label="REVERT" cls="text-sig-danger" />

@@ -1,4 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import type { ThemedToken } from "shiki/core";
+import { COLLAPSE_LINES, tokenize } from "../lib/highlight";
 import { useQueryClient } from "@tanstack/react-query";
 import { HudFrame } from "../components/HudFrame";
 import { StatusChip } from "../components/StatusChip";
@@ -106,13 +108,14 @@ export function DiffPanel() {
         {path && <Briefing path={path} />}
         {path && <FlagBanner path={path} />}
 
-        {!path && <Notice text={status && !status.files.length ? "NO SIGNAL · WORKTREE CLEAN" : "NO SIGNAL · SELECT A FILE"} />}
+        {!path && status && !status.files.length && <CleanState />}
+        {!path && status && status.files.length > 0 && <Notice text="NO SIGNAL · SELECT A FILE" />}
         {path && error && <Notice text={errText(error)} danger />}
         {path && isLoading && <Notice text="DECODING…" />}
         {diff?.isBinary && <Notice text="BINARY FILE — NO PREVIEW" />}
         {diff && !diff.isBinary && diff.hunks.length === 0 && <Notice text="NO TEXTUAL CHANGES" />}
         {diff?.hunks.map((h) => (
-          <Hunk key={h.id} hunk={h} current={h.id === hunkId} verdict={verdicts?.[h.id] ?? null} />
+          <Hunk key={h.id} path={diff.path} hunk={h} current={h.id === hunkId} verdict={verdicts?.[h.id] ?? null} />
         ))}
       </div>
     </HudFrame>
@@ -179,6 +182,31 @@ function FlagBanner({ path }: { path: string }) {
   );
 }
 
+/** The worktree matches HEAD: nothing for Claude left behind. */
+function CleanState() {
+  const { data: model } = useReview();
+  const head = model?.status.head;
+  const session = model?.session;
+  return (
+    <div className="flex-1 flex items-center justify-center">
+      <div className="relative w-[420px] max-w-full flex flex-col items-center gap-3 px-8 py-10 text-center">
+        <span className="dc-corner-outer tl" />
+        <span className="dc-corner-outer tr" />
+        <span className="dc-corner-outer bl" />
+        <span className="dc-corner-outer br" />
+        <span className="font-chrome font-bold tracking-[0.3em] text-[18px] text-hud [text-shadow:0_0_18px_color-mix(in_srgb,var(--ac)_50%,transparent)]">
+          NO SIGNAL
+        </span>
+        <span className="text-[10.5px] tracking-[0.3em] text-ink-dim">WORKTREE CLEAN</span>
+        <span className="text-[11.5px] leading-[1.6] text-ink-faint">
+          Nothing uncommitted{head ? ` on ${head.branch ?? "a detached HEAD"} at ${head.sha.slice(0, 6)}` : ""}.
+          {session ? " Watching the Claude session; its next write shows up here." : " Debrief refreshes when the worktree changes."}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function Notice({ text, danger = false }: { text: string; danger?: boolean }) {
   return (
     <div
@@ -197,8 +225,25 @@ const VERDICT_OFF = "border-hud/20 bg-transparent text-ink-dim";
 const KEEP_ON = "border-sig-okDark bg-sig-okDark/[.22] text-sig-ok";
 const REVERT_ON = "border-sig-dangerDark bg-sig-dangerDark/[.22] text-sig-deleteHi";
 
-function Hunk({ hunk, current, verdict }: { hunk: DiffHunk; current: boolean; verdict: Verdict | null }) {
+function useTokens(path: string, hunk: DiffHunk, enabled: boolean) {
+  const [tokens, setTokens] = useState<ThemedToken[][] | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let live = true;
+    setTokens(null);
+    void tokenize(`${path}:${hunk.id}`, path, hunk.lines.map((l) => l.content)).then((t) => live && setTokens(t));
+    return () => {
+      live = false;
+    };
+  }, [path, hunk, enabled]);
+  return tokens;
+}
+
+function Hunk({ path, hunk, current, verdict }: { path: string; hunk: DiffHunk; current: boolean; verdict: Verdict | null }) {
   const qc = useQueryClient();
+  const large = hunk.lines.length > COLLAPSE_LINES;
+  const open = useUI((s) => !large || !!s.expanded[hunk.id]);
+  const tokens = useTokens(path, hunk, open);
   const decide = (action: "hunk.keep" | "hunk.revert") => (e: React.MouseEvent) => {
     e.stopPropagation();
     useUI.getState().setHunk(hunk.id);
@@ -207,6 +252,8 @@ function Hunk({ hunk, current, verdict }: { hunk: DiffHunk; current: boolean; ve
   return (
     <div
       data-hunk={hunk.id}
+      data-new-start={hunk.newStart}
+      data-new-end={hunk.newStart + hunk.newLines - 1}
       onClick={() => useUI.getState().setHunk(hunk.id)}
       className={["bg-bg-deep border", current ? "border-hud/40" : "border-hud/[.12]"].join(" ")}
     >
@@ -225,11 +272,26 @@ function Hunk({ hunk, current, verdict }: { hunk: DiffHunk; current: boolean; ve
           <span className="font-bold">X</span> REVERT
         </button>
       </div>
-      <div className={["overflow-x-auto py-[6px]", verdict === "revert" ? "opacity-[.35]" : ""].join(" ")}>
-        {hunk.lines.map((l, i) => (
-          <Line key={i} line={l} />
-        ))}
-      </div>
+      {open ? (
+        <div className={["overflow-x-auto py-[6px]", verdict === "revert" ? "opacity-[.35]" : ""].join(" ")}>
+          {hunk.lines.map((l, i) => (
+            <Line key={i} line={l} tokens={tokens?.[i]} />
+          ))}
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            useUI.getState().setHunk(hunk.id);
+            useUI.getState().toggleExpanded(hunk.id, true);
+          }}
+          className="dc-hov w-full py-3 text-center text-[10.5px] tracking-[0.16em] text-ink-faint"
+        >
+          ⋯ {hunk.lines.length.toLocaleString()} LINES COLLAPSED ·{" "}
+          <span className="text-hud">{keyFor("hunk.expand")}</span> TO EXPAND
+        </button>
+      )}
     </div>
   );
 }
@@ -237,13 +299,25 @@ function Hunk({ hunk, current, verdict }: { hunk: DiffHunk; current: boolean; ve
 const LINE_CLASS = { addition: "dc-diff-add", deletion: "dc-diff-del", context: "dc-diff-ctx" } as const;
 const SIGN = { addition: "+", deletion: "−", context: " " } as const;
 
-function Line({ line }: { line: DiffLine }) {
+function Line({ line, tokens }: { line: DiffLine; tokens?: ThemedToken[] }) {
   return (
-    <div data-line data-new-line={line.newLineno ?? undefined} className={`flex min-w-max text-[12px] leading-[1.92] ${LINE_CLASS[line.kind]}`}>
+    <div
+      data-line
+      data-new-line={line.newLineno ?? undefined}
+      className={`flex min-w-max text-[12px] leading-[1.92] ${LINE_CLASS[line.kind]} ${tokens ? "dc-syntax" : ""}`}
+    >
       <span className="w-10 flex-none text-right pr-2 text-ink-darkest select-none">{line.oldLineno ?? ""}</span>
       <span className="w-10 flex-none text-right pr-2 text-ink-darkest select-none">{line.newLineno ?? ""}</span>
       <span className="w-[18px] flex-none text-center select-none">{SIGN[line.kind]}</span>
-      <span className="whitespace-pre pr-6">{line.content}</span>
+      <span className="whitespace-pre pr-6">
+        {tokens
+          ? tokens.map((t, i) => (
+              <span key={i} style={{ color: t.color, fontStyle: t.fontStyle === 1 ? "italic" : undefined }}>
+                {t.content}
+              </span>
+            ))
+          : line.content}
+      </span>
     </div>
   );
 }

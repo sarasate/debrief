@@ -1,6 +1,6 @@
 export type PanelId = "changeset" | "diff" | "notes";
 
-export type HelpGroup = "NAVIGATION" | "REVIEW" | "NOTES" | "DIFF" | "FILTER" | "SESSION" | "GLOBAL";
+export type HelpGroup = "NAVIGATION" | "REVIEW" | "NOTES" | "DIFF" | "FILTER" | "SESSION" | "LOOK" | "GLOBAL";
 
 export interface Binding {
   /** KeyboardEvent.key, or "ctrl+x"; "" for palette-only commands. */
@@ -68,6 +68,7 @@ export const BINDINGS: Binding[] = [
   { key: "ctrl+b", panel: "global", action: "diff.pageUp", desc: "Page up", group: "DIFF" },
   { key: "]", panel: "global", action: "hunk.next", desc: "Next hunk", group: "DIFF", hint: { keys: "]/[", label: "hunk" } },
   { key: "[", panel: "global", action: "hunk.prev", desc: "Previous hunk", group: "DIFF" },
+  { key: "o", panel: "global", action: "hunk.expand", desc: "Expand / collapse a large hunk", group: "DIFF" },
 
   // Filters
   { key: "/", panel: "global", action: "filter.query", desc: "Filter by path", group: "FILTER" },
@@ -81,6 +82,14 @@ export const BINDINGS: Binding[] = [
   { key: "t", panel: "global", action: "grouping.toggle", desc: "Group by intent / file tree", group: "SESSION", hint: { keys: "t", label: "tree" }, cmd: "tree" },
   { key: "S", panel: "global", action: "session.pick", desc: "Pick Claude session", group: "SESSION", hint: { keys: ":session", label: "session" }, cmd: "session" },
   { key: ":", panel: "global", action: "palette.open", desc: "Command palette", group: "SESSION" },
+
+  // Look (SPEC §2 tweaks), palette only
+  { key: "", panel: "global", action: "accent.cyan", desc: "Accent: cyan", group: "LOOK", cmd: "accent cyan" },
+  { key: "", panel: "global", action: "accent.green", desc: "Accent: green", group: "LOOK", cmd: "accent green" },
+  { key: "", panel: "global", action: "accent.amber", desc: "Accent: amber", group: "LOOK", cmd: "accent amber" },
+  { key: "", panel: "global", action: "accent.red", desc: "Accent: red", group: "LOOK", cmd: "accent red" },
+  { key: "", panel: "global", action: "scanlines.toggle", desc: "Scanlines on / off", group: "LOOK", cmd: "scanlines" },
+  { key: "", panel: "global", action: "settings.claudePath", desc: "Path to claude CLI (empty: auto-detect)", group: "NOTES", cmd: "claude-path <path>" },
 
   // Global
   { key: "⌘O", panel: "global", action: "repo.open", desc: "Open repository", group: "GLOBAL", cmd: "open" },
