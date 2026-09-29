@@ -6,6 +6,7 @@ import { CommandBar } from "./components/CommandBar";
 import { HelpOverlay } from "./components/HelpOverlay";
 import { CommandPalette } from "./components/CommandPalette";
 import { DiscardModal } from "./components/DiscardModal";
+import { OutputDrawer } from "./components/OutputDrawer";
 import { Toast } from "./components/Toast";
 import { ChangesetPanel } from "./panels/ChangesetPanel";
 import { DiffPanel } from "./panels/DiffPanel";
@@ -22,6 +23,7 @@ export default function App() {
   useKeybindings();
   useSelectionSync();
   useInvalidationNotice();
+  useTransmitEvents();
 
   // Repo-watcher event
   useEffect(() => {
@@ -57,6 +59,7 @@ export default function App() {
         )}
       </main>
 
+      <OutputDrawer />
       <CommandBar />
       <CommandPalette />
       <DiscardModal />
@@ -76,6 +79,37 @@ function useSelectionSync() {
     const exists = !!selected && data.files.some((f) => f.path === selected);
     if (!exists) useUI.getState().select(order[0] ?? null);
   }, [data, order, selected]);
+}
+
+const MAX_DRAWER_LINES = 2000;
+
+/** Resume-mode output and the review refresh that follows it (SPEC §6, §7). */
+function useTransmitEvents() {
+  const qc = useQueryClient();
+  useEffect(() => {
+    const subs = [
+      listen("review://updated", () => void qc.invalidateQueries({ queryKey: ["repo", "review"] })),
+      listen<{ stream: string; line: string }>("transmit://output", (e) => {
+        const ui = useUI.getState();
+        const t = ui.transmit ?? { running: true, lines: [], code: null, sent: false };
+        ui.setTransmit({ ...t, lines: [...t.lines, e.payload].slice(-MAX_DRAWER_LINES) });
+        if (e.payload.stream === "stdout" && e.payload.line.trim()) ui.setOutput("claude › " + e.payload.line);
+      }),
+      listen<{ code: number | null; sent: boolean }>("transmit://done", (e) => {
+        const ui = useUI.getState();
+        const t = ui.transmit ?? { running: false, lines: [], code: null, sent: false };
+        ui.setTransmit({ ...t, running: false, code: e.payload.code, sent: e.payload.sent });
+        if (e.payload.sent) {
+          ui.setOutput("transmitted notes to claude · awaiting next turn");
+          ui.emitToast("ok", "claude finished the resumed turn");
+        } else {
+          ui.setOutput(`resume ended (exit ${e.payload.code ?? "killed"}) · notes stay queued`);
+          ui.emitToast("err", "resume failed · notes stay queued");
+        }
+      }),
+    ];
+    return () => subs.forEach((p) => p.then((u) => u()));
+  }, [qc]);
 }
 
 /** "auth.guard.ts changed since cleared" when a refresh drops a viewed mark (SPEC §4). */

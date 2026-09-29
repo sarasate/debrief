@@ -31,7 +31,7 @@ export function DiffPanel() {
   useEffect(() => {
     if (!diff) return;
     if (!hunkId || !diff.hunks.some((h) => h.id === hunkId)) {
-      useUI.getState().setHunk(diff.hunks[0]?.id ?? null);
+      useUI.getState().setHunk(diff.hunks[0]?.id ?? null, false);
     }
   }, [diff, hunkId]);
 

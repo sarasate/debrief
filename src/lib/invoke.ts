@@ -2,6 +2,10 @@ import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import type {
   DiscardResult,
   FileDiff,
+  Note,
+  Settings,
+  TransmitMode,
+  TransmitOutcome,
   Ledger,
   RepoInfo,
   RepoStatus,
@@ -28,6 +32,14 @@ export const api = {
   stageCleared: (sessionId: string) => tauriInvoke<StageResult>("stage_cleared", { sessionId }),
   /** Rewrites files on disk: only after the confirm modal. */
   discardReverted: (sessionId: string) => tauriInvoke<DiscardResult>("discard_reverted", { sessionId }),
+  notesAdd: (sessionId: string, path: string, hunk: { id: string; header: string } | null, text: string) =>
+    tauriInvoke<Note>("notes_add", { sessionId, path, hunkId: hunk?.id ?? null, hunkHeader: hunk?.header ?? null, text }),
+  notesRemove: (sessionId: string, id: string) => tauriInvoke<void>("notes_remove", { sessionId, id }),
+  notesTransmit: (sessionId: string, force: boolean) => tauriInvoke<TransmitOutcome>("notes_transmit", { sessionId, force }),
+  transmitCancel: () => tauriInvoke<boolean>("transmit_cancel"),
+  settingsGet: () => tauriInvoke<Settings>("settings_get"),
+  settingsSet: (patch: { transmitMode?: TransmitMode; claudePath?: string }) =>
+    tauriInvoke<Settings>("settings_set", { transmitMode: patch.transmitMode ?? null, claudePath: patch.claudePath ?? null }),
 };
 
 /** Tauri rejects with the serialized AppError, which is a plain string. */

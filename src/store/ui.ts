@@ -19,6 +19,18 @@ interface UIState {
   selectedPath: string | null;
   /** Hunk cursor, by stable hunk id. */
   hunkId: string | null;
+  /** The reviewer moved the cursor to this hunk (vs. the automatic first
+   * hunk), so `n` scopes a note to it. */
+  hunkPinned: boolean;
+  noteDraft: string;
+  /** "file" after N: the next note ignores the hunk cursor. */
+  noteScope: "auto" | "file";
+  /** Selected queued note in the Field notes panel. */
+  notesCursor: number;
+  /** Resume-mode run shown in the output drawer. */
+  transmit: { running: boolean; lines: { stream: string; line: string }[]; code: number | null; sent: boolean } | null;
+  /** A second `f` before this time sends despite the active-session warning. */
+  forceUntil: number;
   /** Pinned session; null follows the newest one, so a new session shows up by itself. */
   sessionId: string | null;
   palette: PaletteMode | null;
@@ -41,7 +53,12 @@ interface UIState {
   setFolder: (dir: string, collapsed: boolean) => void;
   unfoldAll: () => void;
   select: (path: string | null) => void;
-  setHunk: (id: string | null) => void;
+  setHunk: (id: string | null, pinned?: boolean) => void;
+  setNoteDraft: (t: string) => void;
+  setNoteScope: (s: "auto" | "file") => void;
+  setNotesCursor: (i: number) => void;
+  setTransmit: (t: UIState["transmit"]) => void;
+  setForceUntil: (t: number) => void;
   toggleHelp: () => void;
   setOutput: (text: string) => void;
   emitToast: (kind: "ok" | "err", text: string) => void;
@@ -49,9 +66,9 @@ interface UIState {
   pulseError: (p: PanelId) => void;
 }
 
-// Cycled via h/l/Tab. Ops console and field notes join once they have
-// something to navigate.
-const PANEL_ORDER: PanelId[] = ["changeset", "diff"];
+// Cycled via h/l/Tab. The Ops console has nothing to navigate; its actions
+// are global keys.
+const PANEL_ORDER: PanelId[] = ["changeset", "diff", "notes"];
 
 export const useUI = create<UIState>((set, get) => ({
   focus: "diff",
@@ -62,6 +79,12 @@ export const useUI = create<UIState>((set, get) => ({
   collapsed: {},
   selectedPath: null,
   hunkId: null,
+  hunkPinned: false,
+  noteDraft: "",
+  noteScope: "auto",
+  notesCursor: 0,
+  transmit: null,
+  forceUntil: 0,
   sessionId: null,
   palette: null,
   modal: null,
@@ -89,8 +112,13 @@ export const useUI = create<UIState>((set, get) => ({
     set((s) => ({ collapsed: { ...s.collapsed, [dir]: collapsed } })),
   unfoldAll: () => set({ collapsed: {} }),
   select: (path) =>
-    set((s) => (s.selectedPath === path ? {} : { selectedPath: path, hunkId: null })),
-  setHunk: (id) => set({ hunkId: id }),
+    set((s) => (s.selectedPath === path ? {} : { selectedPath: path, hunkId: null, hunkPinned: false })),
+  setHunk: (id, pinned = true) => set({ hunkId: id, hunkPinned: pinned && id != null }),
+  setNoteDraft: (t) => set({ noteDraft: t }),
+  setNoteScope: (s) => set({ noteScope: s }),
+  setNotesCursor: (i) => set({ notesCursor: i }),
+  setTransmit: (t) => set({ transmit: t }),
+  setForceUntil: (t) => set({ forceUntil: t }),
   toggleHelp: () => set((s) => ({ helpOpen: !s.helpOpen })),
   setOutput: (text) => set({ output: text }),
   emitToast: (kind, text) => set({ toast: { kind, text, id: Date.now() } }),

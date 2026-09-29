@@ -10,6 +10,7 @@ export const QK = {
   current: ["repo", "current"] as const,
   review: (sessionId: string | null) => ["repo", "review", sessionId] as const,
   sessions: ["repo", "sessions"] as const,
+  settings: ["settings"] as const,
   diffFile: (path: string | null) => ["repo", "diff", path] as const,
 };
 
@@ -39,6 +40,10 @@ export function useStatus() {
 
 export function useSessions(enabled: boolean) {
   return useQuery({ queryKey: QK.sessions, queryFn: api.sessionsList, enabled });
+}
+
+export function useSettings() {
+  return useQuery({ queryKey: QK.settings, queryFn: api.settingsGet, staleTime: Infinity });
 }
 
 export function useDiffFile(path: string | null) {

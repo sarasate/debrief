@@ -181,6 +181,13 @@ Modes (setting, default **clipboard**):
 
 Once sent, notes move to `transmitted` and the queue empties. The command bar reads `transmitted n notes to claude · awaiting next turn`.
 
+Implementation notes (M6):
+- **Scope.** `n` writes a hunk-scoped note when the reviewer has put the cursor on a hunk (`]`/`[`, a click, `y`/`x`); the automatic first-hunk cursor on opening a file doesn't count. `N` always writes a file note. The note stores the hunk's `@@` header, so the prompt still names it after the hunk is gone. In the composer, ⏎ queues and ⇧⏎ adds a newline.
+- **Queue.** A note is queued until a transmission names it; sent notes stay in the state file on record and can't be removed. "Reverted hunks" in the prompt are the hunks `d` discarded since the last transmit (recorded by `discard_reverted`).
+- **When a batch counts as sent.** Clipboard and file modes: once the clipboard write (and the file write) succeeded; the clipboard is written from Rust, not the webview. Resume: only when `claude` exits 0; a failure or ^C leaves the notes queued.
+- **Mode** lives in app settings (`transmitMode`, default `clipboard`), set with `:transmit-mode clipboard|file|resume`; choosing resume is the opt-in. The binary is `claudePath` if set, else the first `claude` on PATH, `~/.claude/local`, `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`. It runs without a shell, in the session's `cwd` (resume looks sessions up by project dir), with stdin closed. Its stdout/stderr stream into an output drawer above the command bar (`^c` stops it, Esc closes it afterwards).
+- **Active session.** If the transcript was written less than 60 s ago, `f` doesn't start and says so; a second `f` within 8 s sends anyway.
+
 ## 7. Tauri commands
 
 ```
@@ -192,13 +199,15 @@ ledger_load(session_id) -> { turns: Turn[], entries: LedgerEntry[] }
 review_model(session_id) -> ReviewModel          // files + groups + noise + flags + state, computed in Rust
 review_set_viewed(session_id, path, oid, viewed) -> ()  // session_id = model.stateKey
 review_set_verdict(session_id, hunk_id, verdict | null) -> ()
-notes_add(path, hunk_id?, text) -> Note
-notes_remove(id) -> ()
-notes_transmit(mode) -> TransmitResult
+notes_add(session_id, path, hunk_id?, hunk_header?, text) -> Note
+notes_remove(session_id, id) -> ()
+notes_transmit(session_id, force) -> copied | written{path} | started | confirm{message}   // mode from settings
+transmit_cancel() -> bool
+settings_get() / settings_set(transmit_mode?, claude_path?) -> Settings
 stage_cleared(session_id) -> { staged: string[], skipped: {path, reason}[] }
 discard_reverted(session_id) -> { discarded: string[], failed: {id, path, reason}[], warnings: string[] }
 ```
-Events: `repo://changed` (from the watcher; also watch the session's transcript file so a new Claude write shows up live) and `review://updated`.
+Events: `repo://changed` (from the watcher; also watch the session's transcript file so a new Claude write shows up live), `review://updated`, and `transmit://output` / `transmit://done` for resume mode.
 
 ## 8. Out of scope for v1
 Committing, branches, stash, remotes (use git-ui). Split diff view. Multi-repo. Windows.

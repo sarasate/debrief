@@ -163,6 +163,10 @@ export interface ReviewModel {
   invalidated: string[];
   /** The session id the progress is stored under, or "worktree". */
   stateKey: string;
+  /** Queued field notes, oldest first. */
+  notes: Note[];
+  /** Discarded hunks the next transmit will mention. */
+  unreportedDiscards: number;
 }
 
 // Stage / discard (SPEC §5)
@@ -184,3 +188,28 @@ export interface DiscardResult {
   failed: ActionFailure[];
   warnings: string[];
 }
+
+// Field notes and transmit (SPEC §6)
+
+export interface Note {
+  id: string;
+  path: string;
+  hunkId?: string;
+  hunkHeader?: string;
+  text: string;
+  createdAt: string;
+}
+
+export type TransmitMode = "clipboard" | "file" | "resume";
+
+export interface Settings {
+  lastRepo: string | null;
+  transmitMode: TransmitMode;
+  claudePath: string | null;
+}
+
+export type TransmitOutcome =
+  | { status: "copied"; notes: number }
+  | { status: "written"; notes: number; path: string }
+  | { status: "started"; notes: number }
+  | { status: "confirm"; message: string };
