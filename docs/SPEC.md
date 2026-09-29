@@ -33,6 +33,8 @@ Tweaks carried over from DEADBOLT: accent (`#3df0ff`, `#39ff7d`, `#ffb000`, `#ff
 - `diff_file(path)`: working tree vs HEAD (staged and unstaged combined; this is a review of "what changed since the last commit"). Three lines of context. Binary files → "binary file — no preview".
 - A hunk id is `sha1(path + hunk body + n)`, truncated to 12 characters. The body is every line's origin char (`+`, `-`, space) followed by its bytes, context lines included; `n` counts earlier hunks in the same file with an identical body (usually 0). Line numbers are deliberately **not** hashed: an edit above a hunk shifts its ranges, and the id (and any verdict keyed on it) must survive that. The id changes only when the hunk's own lines, or their surrounding context, change.
 
+**Review target (M8).** Everything above reads the current *target*: the working tree (the default, and what opening a repo starts on), or a local branch. A branch diffs `merge-base(base, tip)` against the tip, the three-dot view GitHub shows for a PR, so commits the base gained later don't appear. When the branch is checked out the diff runs on to the working tree (index included), covering its uncommitted changes too. The base is picked in the target, else detected: `origin/HEAD`'s branch, else the first of `main`, `master`, `trunk`, `develop`. Target and range are resolved again on every read, so new commits, a moved base or a rebase show up at the next refresh. All targets share the same diff options, so a hunk has the same id whichever target shows it.
+
 ### 3.2 Claude Code transcripts
 Claude Code stores sessions as JSONL at `~/.claude/projects/<project-dir-slug>/<session-id>.jsonl` (`$CLAUDE_CONFIG_DIR/projects` when that is set). The slug is the absolute cwd with **every non-alphanumeric character** replaced by `-`, so `/w/repo/.claude/worktrees/x` becomes `-w-repo--claude-worktrees-x`.
 
@@ -117,7 +119,7 @@ Rule 1 applies only when a session is linked (without one, every file would be f
 
 ## 4. Review state
 
-Stored in `.git/debrief/<session-id>.json` (never in the working tree):
+Stored in `.git/debrief/<key>.json` (never in the working tree), where `key` is the session id for a working-tree review and `branch-<12 hex of sha1(branch + base)>` for a branch review, so each keeps its own progress. In a branch review that isn't checked out, viewed marks store the blob oid at the branch tip rather than the file on disk. Committed ledger edits are not dropped in a branch review (§3.3's "committed later" rule only applies to the working tree), and stage and discard (§5) refuse a branch that isn't checked out; on a checked-out branch they only reach hunks still in HEAD → worktree, and a revert verdict on a committed hunk stays as a request.
 
 ```ts
 interface ReviewState {
@@ -192,8 +194,10 @@ Implementation notes (M6):
 
 ```
 repo_open(path) -> RepoInfo
-repo_status() -> RepoStatus                      // reuse git-ui
-diff_file(path) -> FileDiff                      // HEAD vs workdir, with hunk ids
+repo_status() -> RepoStatus                      // for the current target
+diff_file(path) -> FileDiff                      // current target, with hunk ids
+target_list() -> { base, branches: {name, ahead, behind, checkedOut, updatedAt, subject}[] }
+target_set(worktree | branch{head, base?}) -> Range | null   // merge-base, tip, ahead/behind, includesWorktree
 sessions_list() -> SessionInfo[]                 // for this repo, newest first
 ledger_load(session_id) -> { turns: Turn[], entries: LedgerEntry[] }
 review_model(session_id) -> ReviewModel          // files + groups + noise + flags + state, computed in Rust

@@ -140,9 +140,43 @@ export interface FileMeta {
   /** Worktree blob oid, sent back when marking viewed (SPEC §4). */
   oid: string;
   hunkIds: string[];
+  /** Branch review: hunks still uncommitted (the only ones stage/discard reach). Null in a worktree review. */
+  uncommitted: string[] | null;
 }
 
 export type Verdict = "keep" | "revert";
+
+// Review target (docs/PLAN.md "Branch & PR review")
+
+export type Target = { kind: "worktree" } | { kind: "branch"; head: string; base: string | null };
+
+/** A branch target resolved to commits. */
+export interface Range {
+  head: string;
+  base: string;
+  headSha: string;
+  mergeBaseSha: string;
+  ahead: number;
+  behind: number;
+  /** The branch is checked out, so the review runs on to the working tree. */
+  includesWorktree: boolean;
+  /** ms since epoch */
+  headTime: number;
+}
+
+export interface BranchOption {
+  name: string;
+  ahead: number;
+  behind: number;
+  checkedOut: boolean;
+  updatedAt: number;
+  subject: string;
+}
+
+export interface TargetList {
+  base: string | null;
+  branches: BranchOption[];
+}
 
 export interface NoiseConfig {
   globs: string[];
@@ -167,6 +201,8 @@ export interface ReviewModel {
   notes: Note[];
   /** Discarded hunks the next transmit will mention. */
   unreportedDiscards: number;
+  /** The branch under review; null for the working tree. */
+  range: Range | null;
 }
 
 // Stage / discard (SPEC §5)

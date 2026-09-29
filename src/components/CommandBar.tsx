@@ -8,10 +8,10 @@ export function CommandBar() {
 
   return (
     <footer className="relative z-10 flex-none h-10 flex items-center gap-[14px] pl-[14px] pr-3 border-t border-hud/20 bg-bg-deep">
-      <span className="px-[10px] py-[3px] bg-hud/20 border border-hud text-hud font-chrome font-bold text-[11px] tracking-[0.14em]">
+      <span className="flex-none whitespace-nowrap px-[10px] py-[3px] bg-hud/20 border border-hud text-hud font-chrome font-bold text-[11px] tracking-[0.14em]">
         CMD ›
       </span>
-      <span className="min-w-0 text-[12px] text-ink-mid whitespace-nowrap overflow-hidden text-ellipsis">
+      <span title={output} className="min-w-0 text-[12px] text-ink-mid whitespace-nowrap overflow-hidden text-ellipsis">
         {output}
         <span className="text-hud animate-blink">_</span>
       </span>

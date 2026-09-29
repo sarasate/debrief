@@ -6,9 +6,9 @@ import { buildChangeset, isOpen, splitPath } from "../lib/changeset";
 import { errText } from "../lib/invoke";
 import { openRepoDialog } from "../lib/openRepo";
 import { pageLines, reveal, scrollPanelByLines, scrollPanelTo } from "../lib/scroll";
-import { QK } from "./useRepo";
+import { QK, diffKey, reviewKey } from "./useRepo";
 import type { Accent, FileDiff, ReviewModel, Settings, Verdict } from "../lib/types";
-import { currentModel, revertTargets, setVerdict, setViewed, stageCleared } from "../lib/review";
+import { committedReverts, currentModel, readOnlyReason, revertTargets, setVerdict, setViewed, stageCleared } from "../lib/review";
 import { focusComposer, removeNote, setTransmitMode, transmit } from "../lib/notes";
 import { api } from "../lib/invoke";
 import { COLLAPSE_LINES } from "../lib/highlight";
@@ -75,7 +75,7 @@ function isTextEntry(t: HTMLElement): boolean {
 
 function currentView(qc: QueryClient) {
   const ui = useUI.getState();
-  return buildChangeset(qc.getQueryData<ReviewModel>(QK.review(ui.sessionId)), ui);
+  return buildChangeset(qc.getQueryData<ReviewModel>(reviewKey()), ui);
 }
 
 /**
@@ -170,7 +170,10 @@ export async function runAction(action: string, qc: QueryClient) {
       const next = model.verdicts[id] === v ? null : v;
       await setVerdict(qc, id, next);
       const where = `hunk ${ids.indexOf(id) + 1}/${ids.length} of ${splitPath(ui.selectedPath!).name}`;
-      ui.setOutput(`${where} → ${next === "keep" ? "kept" : next === "revert" ? "marked for discard" : "undecided"}`);
+      const meta = model.files[ui.selectedPath!];
+      const committed = !!model.range && !(meta?.uncommitted ?? []).includes(id);
+      const revert = committed ? "revert requested (committed)" : "marked for discard";
+      ui.setOutput(`${where} → ${next === "keep" ? "kept" : next === "revert" ? revert : "undecided"}`);
       return;
     }
 
@@ -218,11 +221,32 @@ export async function runAction(action: string, qc: QueryClient) {
       return;
     }
 
-    case "ops.stage": await stageCleared(qc); return;
-    case "ops.discard":
-      if (!revertTargets(currentModel(qc)).length) { ui.setOutput("no hunks marked revert · x to mark one"); return; }
+    case "ops.stage": {
+      const why = readOnlyReason(currentModel(qc));
+      if (why) { ui.setOutput(why); return; }
+      await stageCleared(qc);
+      return;
+    }
+    case "ops.discard": {
+      const model = currentModel(qc);
+      const why = readOnlyReason(model);
+      if (why) { ui.setOutput(why); return; }
+      if (!revertTargets(model).length) {
+        const committed = committedReverts(model);
+        const meta = ui.selectedPath ? model?.files[ui.selectedPath] : undefined;
+        const cursorCommitted = !!model?.range && !!ui.hunkId && !(meta?.uncommitted ?? []).includes(ui.hunkId);
+        ui.setOutput(
+          cursorCommitted
+            ? "the hunk under the cursor is committed · discard reaches only uncommitted hunks"
+            : committed
+            ? `${committed} committed hunk${committed === 1 ? "" : "s"} marked revert stay as requests · only uncommitted hunks can be discarded`
+            : "no hunks marked revert · x to mark one",
+        );
+        return;
+      }
       ui.openModal("discard");
       return;
+    }
 
     // tree
     case "tree.fold": {
@@ -243,6 +267,7 @@ export async function runAction(action: string, qc: QueryClient) {
       return;
     case "palette.open": ui.openPalette("commands"); return;
     case "session.pick": ui.openPalette("sessions"); return;
+    case "target.pick": ui.openPalette("targets"); return;
 
     // focus
     case "focus.next": ui.cyclePanel(1); return;
@@ -258,7 +283,7 @@ export async function runAction(action: string, qc: QueryClient) {
     case "diff.pageDown": scrollPanelByLines("diff", pageLines("diff")); return;
     case "diff.pageUp": scrollPanelByLines("diff", -pageLines("diff")); return;
     case "hunk.expand": {
-      const diff = qc.getQueryData<FileDiff>(QK.diffFile(ui.selectedPath));
+      const diff = qc.getQueryData<FileDiff>(diffKey(ui.selectedPath));
       const h = diff?.hunks.find((x) => x.id === ui.hunkId);
       if (!h) return;
       if (h.lines.length <= COLLAPSE_LINES) { ui.setOutput("this hunk isn't collapsed"); return; }
@@ -268,7 +293,7 @@ export async function runAction(action: string, qc: QueryClient) {
     }
     case "hunk.next":
     case "hunk.prev": {
-      const diff = qc.getQueryData<FileDiff>(QK.diffFile(ui.selectedPath));
+      const diff = qc.getQueryData<FileDiff>(diffKey(ui.selectedPath));
       const ids = diff?.hunks.map((h) => h.id) ?? [];
       if (!ids.length) return;
       const i = ui.hunkId ? ids.indexOf(ui.hunkId) : -1;
@@ -288,13 +313,13 @@ export async function runAction(action: string, qc: QueryClient) {
     case "filter.flagged": ui.setFilter("flagged"); return;
     case "filter.mask": {
       ui.toggleMask();
-      const model = qc.getQueryData<ReviewModel>(QK.review(ui.sessionId));
+      const model = qc.getQueryData<ReviewModel>(reviewKey());
       const n = Object.values(model?.files ?? {}).filter((m) => m.noise).length;
       ui.setOutput(`${useUI.getState().maskNoise ? "masked" : "unmasked"} ${n} generated & lock file${n === 1 ? "" : "s"}`);
       return;
     }
     case "flag.jump": {
-      const model = qc.getQueryData<ReviewModel>(QK.review(ui.sessionId));
+      const model = qc.getQueryData<ReviewModel>(reviewKey());
       const line = ui.selectedPath ? model?.files[ui.selectedPath]?.flags.find((f) => f.line != null)?.line : null;
       if (line == null) { ui.setOutput("no flagged line in this file"); return; }
       jumpToLine(line);

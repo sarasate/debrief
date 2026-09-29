@@ -2,13 +2,14 @@ import { HudFrame } from "../components/HudFrame";
 import { useQueryClient } from "@tanstack/react-query";
 import { useReview } from "../hooks/useRepo";
 import { runAction } from "../hooks/useKeybindings";
-import { progress, revertTargets } from "../lib/review";
+import { progress, readOnlyReason, revertTargets, stageableCount } from "../lib/review";
 
 // Noise files count in the header totals but not in progress (SPEC §3.4).
 export function OpsPanel() {
   const { data } = useReview();
   const qc = useQueryClient();
-  const staged = Object.values(data?.files ?? {}).filter((m) => m.viewed).length;
+  const staged = stageableCount(data);
+  const readOnly = readOnlyReason(data);
   // Everything `d` would discard, noise included.
   const toDiscard = revertTargets(data).reduce((n, t) => n + t.ids.length, 0);
   const p = progress(data);
@@ -38,18 +39,18 @@ export function OpsPanel() {
         <div className="grid grid-cols-2 gap-[6px]">
           <button
             type="button"
-            disabled={staged === 0}
+            disabled={staged === 0 || !!readOnly}
             onClick={() => void runAction("ops.stage", qc)}
-            title="Stage every cleared file, minus hunks marked revert"
+            title={readOnly ?? "Stage every cleared file, minus hunks marked revert"}
             className="dc-hov h-[38px] px-[10px] text-left border border-hud/25 bg-transparent text-ink-light text-[10.5px] tracking-[0.14em] disabled:opacity-40"
           >
             <span className="text-hud font-bold">A</span> STAGE {staged}
           </button>
           <button
             type="button"
-            disabled={toDiscard === 0}
+            disabled={toDiscard === 0 || !!readOnly}
             onClick={() => void runAction("ops.discard", qc)}
-            title="Reverse-apply hunks marked revert (asks first)"
+            title={readOnly ?? "Reverse-apply hunks marked revert (asks first)"}
             className="dc-hov h-[38px] px-[10px] text-left border border-sig-danger/40 bg-transparent text-sig-dangerInk text-[10.5px] tracking-[0.14em] disabled:opacity-40"
           >
             <span className="font-bold">D</span> DISCARD {toDiscard}

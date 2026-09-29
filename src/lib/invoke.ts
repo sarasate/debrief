@@ -13,6 +13,9 @@ import type {
   ReviewModel,
   SessionInfo,
   StageResult,
+  Range,
+  Target,
+  TargetList,
   Verdict,
 } from "./types";
 
@@ -30,6 +33,8 @@ export const api = {
     tauriInvoke<void>("review_set_viewed", { sessionId, path, oid, viewed }),
   reviewSetVerdict: (sessionId: string, hunkId: string, verdict: Verdict | null) =>
     tauriInvoke<void>("review_set_verdict", { sessionId, hunkId, verdict }),
+  targetList: () => tauriInvoke<TargetList>("target_list"),
+  targetSet: (target: Target) => tauriInvoke<Range | null>("target_set", { target }),
   stageCleared: (sessionId: string) => tauriInvoke<StageResult>("stage_cleared", { sessionId }),
   /** Rewrites files on disk: only after the confirm modal. */
   discardReverted: (sessionId: string) => tauriInvoke<DiscardResult>("discard_reverted", { sessionId }),

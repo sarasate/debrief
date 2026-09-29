@@ -4,7 +4,8 @@ import { useUI } from "../store/ui";
 import { BINDINGS, keyLabel } from "../lib/keymap";
 import { api, errText } from "../lib/invoke";
 import { runAction } from "../hooks/useKeybindings";
-import { QK, useReview, useSessions } from "../hooks/useRepo";
+import { QK, useReview, useSessions, useTargets } from "../hooks/useRepo";
+import { switchTarget } from "../lib/target";
 import { agoLabel } from "../hooks/useNow";
 
 interface Item {
@@ -25,6 +26,9 @@ export function CommandPalette() {
   const [sel, setSel] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const { data: sessions, isLoading } = useSessions(mode === "sessions");
+  const { data: targets, isLoading: targetsLoading } = useTargets(mode === "targets");
+  // What the backend is actually reviewing, from the model.
+  const { data: activeHead } = useReview((m) => m.range?.head ?? null);
   const { data: current } = useReview((m) => m.session?.id ?? null);
   const pinned = useUI((s) => s.sessionId);
 
@@ -67,14 +71,43 @@ export function CommandPalette() {
               inputRef.current?.focus();
               return;
             }
-            // `:session` swaps the palette over instead of closing it.
-            if (c.action !== "session.pick") close();
+            // `:session` and `:target` swap the palette over instead of closing it.
+            if (c.action !== "session.pick" && c.action !== "target.pick") close();
             await runAction(c.action, qc);
           },
         }),
       );
     }
     const now = Date.now();
+    if (mode === "targets") {
+      const base = targets?.base ?? null;
+      const active = (name: string | null) => (activeHead ?? null) === name;
+      const items: Item[] = [
+        {
+          key: "worktree",
+          label: "Working tree",
+          detail: "uncommitted changes against HEAD",
+          mark: active(null) ? "ACTIVE" : undefined,
+          run: async () => {
+            close();
+            await switchTarget(qc, { kind: "worktree" });
+          },
+        },
+        ...(targets?.branches ?? []).map((b) => ({
+          key: "b:" + b.name,
+          label: b.name + (b.checkedOut ? "  (checked out)" : ""),
+          detail:
+            (base ? `${b.ahead} ahead · ${b.behind} behind ${base}` : "no base branch found") +
+            ` · ${agoLabel(b.updatedAt, now).toLowerCase()} · ${b.subject}`,
+          mark: active(b.name) ? "ACTIVE" : undefined,
+          run: async () => {
+            close();
+            await switchTarget(qc, { kind: "branch", head: b.name, base: null });
+          },
+        })),
+      ];
+      return items.filter((i) => !needle || i.label.toLowerCase().includes(needle) || i.detail.toLowerCase().includes(needle));
+    }
     const list: Item[] = (sessions ?? []).map((s) => ({
       key: s.id,
       label: s.title,
@@ -100,7 +133,7 @@ export function CommandPalette() {
     return [auto, ...list].filter(
       (i) => !needle || i.label.toLowerCase().includes(needle) || i.detail.toLowerCase().includes(needle),
     );
-  }, [mode, q, sessions, current, pinned, qc]);
+  }, [mode, q, sessions, current, pinned, qc, targets, activeHead]);
 
   if (!mode) return null;
 
@@ -120,7 +153,7 @@ export function CommandPalette() {
       >
         <div className="flex items-center gap-3 px-[18px] py-[15px] border-b border-hud/20">
           <span className="text-[20px] text-hud [text-shadow:0_0_12px_color-mix(in_srgb,var(--ac)_60%,transparent)]">
-            {mode === "sessions" ? "⌁" : ":"}
+            {mode === "sessions" ? "⌁" : mode === "targets" ? "⎇" : ":"}
           </span>
           <input
             ref={inputRef}
@@ -135,9 +168,18 @@ export function CommandPalette() {
               if (e.key === "ArrowUp") { e.preventDefault(); setSel((s) => Math.max(0, s - 1)); }
               if (e.key === "Enter" && items[sel]) { e.preventDefault(); void exec(items[sel]); }
             }}
-            placeholder={mode === "sessions" ? "filter sessions by title…" : "session · tree · transmit-mode · accent · claude-path … · help"}
+            placeholder={
+              mode === "sessions"
+                ? "filter sessions by title…"
+                : mode === "targets"
+                ? "filter branches…"
+                : "target · session · tree · transmit-mode · accent · claude-path … · help"
+            }
             className="flex-1 bg-transparent border-none outline-none text-[15px] text-ink-bright placeholder:text-ink-dimmer"
           />
+          {mode === "targets" && (
+            <span className="text-[10px] tracking-[0.2em] text-hud whitespace-nowrap">REVIEW TARGET</span>
+          )}
           {mode === "sessions" && (
             <span className="text-[10px] tracking-[0.2em] text-sig-agent whitespace-nowrap">CLAUDE SESSIONS</span>
           )}
@@ -162,6 +204,7 @@ export function CommandPalette() {
               )}
             </li>
           ))}
+          {mode === "targets" && targetsLoading && <li className="px-3 py-2 text-ink-dimmer text-xs">reading branches…</li>}
           {mode === "sessions" && isLoading && <li className="px-3 py-2 text-ink-dimmer text-xs">scanning transcripts…</li>}
           {mode === "sessions" && !isLoading && !sessions?.length && (
             <li className="px-3 py-2 text-ink-dimmer text-xs">no Claude Code sessions found for this repo</li>

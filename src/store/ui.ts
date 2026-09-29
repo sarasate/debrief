@@ -1,9 +1,10 @@
 import { create } from "zustand";
 import type { PanelId } from "../lib/keymap";
+import type { Target } from "../lib/types";
 
 export type Grouping = "intent" | "tree";
 export type FileFilter = "all" | "open" | "flagged";
-export type PaletteMode = "commands" | "sessions";
+export type PaletteMode = "commands" | "sessions" | "targets";
 export type ModalId = "discard";
 
 interface UIState {
@@ -35,6 +36,8 @@ interface UIState {
   forceUntil: number;
   /** Pinned session; null follows the newest one, so a new session shows up by itself. */
   sessionId: string | null;
+  /** Mirrors the backend's target; part of the review query key. */
+  target: Target;
   palette: PaletteMode | null;
   modal: ModalId | null;
   helpOpen: boolean;
@@ -49,6 +52,7 @@ interface UIState {
   toggleMask: () => void;
   toggleGrouping: () => void;
   setSession: (id: string | null) => void;
+  setTarget: (t: Target) => void;
   openPalette: (mode: PaletteMode | null) => void;
   openModal: (m: ModalId | null) => void;
   setQuery: (q: string) => void;
@@ -92,6 +96,7 @@ export const useUI = create<UIState>((set, get) => ({
   transmit: null,
   forceUntil: 0,
   sessionId: null,
+  target: { kind: "worktree" },
   palette: null,
   modal: null,
   helpOpen: false,
@@ -110,6 +115,7 @@ export const useUI = create<UIState>((set, get) => ({
   toggleMask: () => set((s) => ({ maskNoise: !s.maskNoise })),
   toggleGrouping: () => set((s) => ({ grouping: s.grouping === "intent" ? "tree" : "intent" })),
   setSession: (id) => set({ sessionId: id }),
+  setTarget: (t) => set({ target: t }),
   openPalette: (mode) => set({ palette: mode }),
   openModal: (m) => set({ modal: m }),
   setQuery: (q) => set({ query: q }),

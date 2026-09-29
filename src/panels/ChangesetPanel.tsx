@@ -117,7 +117,9 @@ export function ChangesetPanel() {
       >
         {error && <Empty text={errText(error)} danger />}
         {isLoading && <Empty text="SCANNING WORKTREE…" />}
-        {data && total === 0 && <Empty text="NO SIGNAL · WORKTREE CLEAN" />}
+        {data && total === 0 && (
+          <Empty text={model?.range ? `NO CHANGES · ${model.range.head.toUpperCase()} MATCHES ${model.range.base.toUpperCase()}` : "NO SIGNAL · WORKTREE CLEAN"} />
+        )}
         {data && total > 0 && view.rows.length === 0 && (
           <Empty
             text={

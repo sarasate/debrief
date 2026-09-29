@@ -4,7 +4,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { api } from "./invoke";
 import { currentModel } from "./review";
 import { splitPath } from "./changeset";
-import { QK } from "../hooks/useRepo";
+import { QK, diffKey, reviewKey } from "../hooks/useRepo";
 import { useUI } from "../store/ui";
 import type { FileDiff, TransmitMode } from "./types";
 
@@ -15,7 +15,7 @@ export function noteTarget(qc: QueryClient) {
   const ui = useUI.getState();
   const path = ui.selectedPath;
   if (!path) return null;
-  const diff = qc.getQueryData<FileDiff>(QK.diffFile(path));
+  const diff = qc.getQueryData<FileDiff>(diffKey(path));
   const hunks = diff?.hunks ?? [];
   const i = ui.hunkId ? hunks.findIndex((h) => h.id === ui.hunkId) : -1;
   const scoped = ui.noteScope === "auto" && ui.hunkPinned && i !== -1;
@@ -40,7 +40,7 @@ export async function queueNote(qc: QueryClient) {
   await api.notesAdd(model.stateKey, target.path, target.hunk, text);
   ui.setNoteDraft("");
   ui.setNoteScope("auto");
-  await qc.invalidateQueries({ queryKey: QK.review(ui.sessionId) });
+  await qc.invalidateQueries({ queryKey: reviewKey() });
   ui.setOutput(`note queued @ ${target.name}` + (target.hunk ? ` · hunk ${target.hunk.index}/${target.hunk.of}` : ""));
 }
 
@@ -48,7 +48,7 @@ export async function removeNote(qc: QueryClient, id: string) {
   const model = currentModel(qc);
   if (!model) return;
   await api.notesRemove(model.stateKey, id);
-  await qc.invalidateQueries({ queryKey: QK.review(useUI.getState().sessionId) });
+  await qc.invalidateQueries({ queryKey: reviewKey() });
   useUI.getState().setOutput("note removed");
 }
 
@@ -84,7 +84,7 @@ export async function transmit(qc: QueryClient) {
       ui.setOutput(`${r.message} · f again within 8s to send anyway`);
       return;
   }
-  await qc.invalidateQueries({ queryKey: QK.review(ui.sessionId) });
+  await qc.invalidateQueries({ queryKey: reviewKey() });
 }
 
 export async function setTransmitMode(qc: QueryClient, mode: TransmitMode) {

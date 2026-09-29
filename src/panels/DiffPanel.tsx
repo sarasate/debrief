@@ -28,6 +28,8 @@ export function DiffPanel() {
   const qc = useQueryClient();
   const { data: viewed } = useReview((m) => (path ? !!m.files[path]?.viewed : false));
   const { data: verdicts } = useReview((m) => m.verdicts);
+  // Branch review: hunks stage/discard can't reach (null = worktree review).
+  const { data: uncommitted } = useReview((m) => (m.range && path ? m.files[path]?.uncommitted ?? [] : null));
 
   // Keep the hunk cursor on a hunk that exists; a refresh can drop it.
   useEffect(() => {
@@ -116,7 +118,14 @@ export function DiffPanel() {
         {diff?.isBinary && <Notice text="BINARY FILE — NO PREVIEW" />}
         {diff && !diff.isBinary && diff.hunks.length === 0 && <Notice text="NO TEXTUAL CHANGES" />}
         {diff?.hunks.map((h) => (
-          <Hunk key={h.id} path={diff.path} hunk={h} current={h.id === hunkId} verdict={verdicts?.[h.id] ?? null} />
+          <Hunk
+            key={h.id}
+            path={diff.path}
+            hunk={h}
+            current={h.id === hunkId}
+            verdict={verdicts?.[h.id] ?? null}
+            committed={!!uncommitted && !uncommitted.includes(h.id)}
+          />
         ))}
       </div>
     </HudFrame>
@@ -188,6 +197,26 @@ function CleanState() {
   const { data: model } = useReview();
   const head = model?.status.head;
   const session = model?.session;
+  const range = model?.range;
+  if (range) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="relative w-[420px] max-w-full flex flex-col items-center gap-3 px-8 py-10 text-center">
+          <span className="dc-corner-outer tl" />
+          <span className="dc-corner-outer tr" />
+          <span className="dc-corner-outer bl" />
+          <span className="dc-corner-outer br" />
+          <span className="font-chrome font-bold tracking-[0.3em] text-[18px] text-hud">NO CHANGES</span>
+          <span className="text-[10.5px] tracking-[0.3em] text-ink-dim uppercase">
+            {range.head} matches {range.base}
+          </span>
+          <span className="text-[11.5px] leading-[1.6] text-ink-faint">
+            Nothing on this branch since it left {range.base}. B picks another branch or the working tree.
+          </span>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="flex-1 flex items-center justify-center">
       <div className="relative w-[420px] max-w-full flex flex-col items-center gap-3 px-8 py-10 text-center">
@@ -240,7 +269,19 @@ function useTokens(path: string, hunk: DiffHunk, enabled: boolean) {
   return tokens;
 }
 
-function Hunk({ path, hunk, current, verdict }: { path: string; hunk: DiffHunk; current: boolean; verdict: Verdict | null }) {
+function Hunk({
+  path,
+  hunk,
+  current,
+  verdict,
+  committed,
+}: {
+  path: string;
+  hunk: DiffHunk;
+  current: boolean;
+  verdict: Verdict | null;
+  committed: boolean;
+}) {
   const qc = useQueryClient();
   const large = hunk.lines.length > COLLAPSE_LINES;
   const open = useUI((s) => !large || !!s.expanded[hunk.id]);
@@ -263,8 +304,18 @@ function Hunk({ path, hunk, current, verdict }: { path: string; hunk: DiffHunk; 
           {hunk.header}
         </span>
         <span className="flex-1" />
+        {committed && (
+          <span
+            title="Already committed on the branch: it can be marked, but not staged or discarded"
+            className="flex-none px-[6px] py-px border border-hud/25 text-[10px] tracking-[0.16em] text-ink-dim whitespace-nowrap"
+          >
+            COMMITTED
+          </span>
+        )}
         {verdict === "revert" && (
-          <span className="flex-none text-[10px] tracking-[0.16em] text-sig-danger whitespace-nowrap">MARKED FOR DISCARD</span>
+          <span className="flex-none text-[10px] tracking-[0.16em] text-sig-danger whitespace-nowrap">
+            {committed ? "REVERT REQUESTED" : "MARKED FOR DISCARD"}
+          </span>
         )}
         <button type="button" onClick={decide("hunk.keep")} className={`${verdictBtn} ${verdict === "keep" ? KEEP_ON : VERDICT_OFF}`}>
           <span className="font-bold">Y</span> KEEP

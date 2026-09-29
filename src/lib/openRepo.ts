@@ -15,6 +15,7 @@ export async function openRepoDialog(qc: QueryClient) {
     const ui = useUI.getState();
     ui.select(null);
     ui.setSession(null);
+    ui.setTarget({ kind: "worktree" }); // repo_open starts on the working tree
     ui.unfoldAll();
     ui.setQuery("");
     await qc.invalidateQueries({ queryKey: ["repo"] });

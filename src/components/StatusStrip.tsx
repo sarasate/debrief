@@ -17,6 +17,8 @@ export function StatusStrip() {
     : head?.branch ?? "(NO HEAD)";
   const files = data?.files.length ?? 0;
   const dirty = files > 0;
+  const range = model?.range ?? null;
+  const commits = range ? `${range.ahead} COMMIT${range.ahead === 1 ? "" : "S"}` : "";
 
   return (
     <>
@@ -30,19 +32,26 @@ export function StatusStrip() {
           DEBRIEF
         </div>
         <div className="flex-1 min-w-0 flex items-center gap-7 px-5 text-[11px] tracking-[0.13em] text-ink-label overflow-hidden">
-          <span className="whitespace-nowrap">
+          <span className="flex-none whitespace-nowrap">
             REPO <span className="text-ink-light uppercase">{repo?.name ?? "—"}</span>
           </span>
-          <span className="whitespace-nowrap">
+          {/* The branch label is the one that gives way on a narrow window. */}
+          <span title={range ? `${range.head} ← ${range.base}` : undefined} className="min-w-0 whitespace-nowrap overflow-hidden text-ellipsis">
             BRANCH{" "}
             <span className="uppercase text-hud [text-shadow:0_0_10px_color-mix(in_srgb,var(--ac)_60%,transparent)]">
-              {branch}
+              {range ? range.head : branch}
             </span>
+            {range && (
+              <>
+                {" "}← <span className="uppercase text-ink-light">{range.base}</span> · {commits}
+              </>
+            )}
           </span>
-          <span className="whitespace-nowrap">
-            HEAD <span className="text-ink-light">{head?.sha.slice(0, 6) || "——————"}</span>
+          <span className="flex-none whitespace-nowrap">
+            {range ? "TIP" : "HEAD"}{" "}
+            <span className="text-ink-light">{(range ? range.headSha : head?.sha)?.slice(0, 6) || "——————"}</span>
           </span>
-          <span className="whitespace-nowrap">
+          <span className="flex-none whitespace-nowrap">
             AGENT <span className={session ? "text-sig-agent" : "text-ink-faint"}>{session ? "CLAUDE" : "NO SESSION"}</span> · LAST WRITE{" "}
             <span className="text-ink-light">{agoLabel(lastWrite, now)}</span>
           </span>
@@ -66,14 +75,22 @@ export function StatusStrip() {
                   : "bg-hud shadow-[0_0_10px_var(--ac)]",
               ].join(" ")}
             />
-            {!data ? "NO LINK" : dirty ? "WORKTREE DIRTY" : "WORKTREE CLEAN"}
+            {!data
+              ? "NO LINK"
+              : range
+              ? range.includesWorktree
+                ? "BRANCH + WORKTREE"
+                : "BRANCH REVIEW"
+              : dirty
+              ? "WORKTREE DIRTY"
+              : "WORKTREE CLEAN"}
           </span>
         </div>
       </header>
 
       {/* CLASSIFIED TAPE */}
       <div className="relative z-10 flex-none px-5 py-1 border-b border-hud/10 bg-hud/[.03] text-[9.5px] tracking-[0.34em] text-[color:color-mix(in_srgb,var(--ac)_34%,theme(colors.ink.deepest))] whitespace-nowrap overflow-hidden">
-        // AGENT DEBRIEF // UNCOMMITTED CHANGES // SESSION: {session ? session.title.toUpperCase() : "NONE LINKED"} //{" "}
+        // AGENT DEBRIEF // {range ? `BRANCH ${range.head.toUpperCase()} ← ${range.base.toUpperCase()} // ${commits}` : "UNCOMMITTED CHANGES"} // SESSION: {session ? session.title.toUpperCase() : "NONE LINKED"} //{" "}
         {files} FILES TOUCHED // REVIEW BEFORE COMMIT // EYES ONLY //
       </div>
     </>

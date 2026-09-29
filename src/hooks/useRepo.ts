@@ -3,16 +3,32 @@ import { useMemo } from "react";
 import { api } from "../lib/invoke";
 import { buildChangeset } from "../lib/changeset";
 import { useUI } from "../store/ui";
-import type { ReviewModel } from "../lib/types";
+import type { ReviewModel, Target } from "../lib/types";
+
+/** A stable string for a target, for query keys. */
+export function targetKey(t: Target): string {
+  return t.kind === "worktree" ? "worktree" : `branch:${t.head}:${t.base ?? ""}`;
+}
 
 // Everything under "repo" is refetched when the watcher fires.
 export const QK = {
   current: ["repo", "current"] as const,
-  review: (sessionId: string | null) => ["repo", "review", sessionId] as const,
+  review: (sessionId: string | null, target: string) => ["repo", "review", sessionId, target] as const,
+  targets: ["repo", "targets"] as const,
   sessions: ["repo", "sessions"] as const,
   settings: ["settings"] as const,
-  diffFile: (path: string | null) => ["repo", "diff", path] as const,
+  diffFile: (path: string | null, target: string) => ["repo", "diff", target, path] as const,
 };
+
+/** The review query key for the UI's current session pin and target. */
+export function reviewKey() {
+  const s = useUI.getState();
+  return QK.review(s.sessionId, targetKey(s.target));
+}
+
+export function diffKey(path: string | null) {
+  return QK.diffFile(path, targetKey(useUI.getState().target));
+}
 
 export function useRepoCurrent() {
   return useQuery({ queryKey: QK.current, queryFn: api.repoCurrent, staleTime: Infinity });
@@ -22,8 +38,9 @@ export function useRepoCurrent() {
 export function useReview<T = ReviewModel>(select?: (m: ReviewModel) => T) {
   const { data: repo } = useRepoCurrent();
   const sessionId = useUI((s) => s.sessionId);
+  const target = useUI((s) => targetKey(s.target));
   return useQuery({
-    queryKey: QK.review(sessionId),
+    queryKey: QK.review(sessionId, target),
     queryFn: () => api.reviewModel(sessionId),
     enabled: !!repo,
     select,
@@ -46,9 +63,14 @@ export function useSettings() {
   return useQuery({ queryKey: QK.settings, queryFn: api.settingsGet, staleTime: Infinity });
 }
 
+export function useTargets(enabled: boolean) {
+  return useQuery({ queryKey: QK.targets, queryFn: api.targetList, enabled });
+}
+
 export function useDiffFile(path: string | null) {
+  const target = useUI((s) => targetKey(s.target));
   return useQuery({
-    queryKey: QK.diffFile(path),
+    queryKey: QK.diffFile(path, target),
     queryFn: () => api.diffFile(path!),
     enabled: !!path,
   });

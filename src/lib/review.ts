@@ -3,20 +3,20 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import { api } from "./invoke";
-import { QK } from "../hooks/useRepo";
+import { reviewKey } from "../hooks/useRepo";
 import { useUI } from "../store/ui";
 import type { ReviewModel, Verdict } from "./types";
 
 export function currentModel(qc: QueryClient): ReviewModel | undefined {
-  return qc.getQueryData<ReviewModel>(QK.review(useUI.getState().sessionId));
+  return qc.getQueryData<ReviewModel>(reviewKey());
 }
 
 function patch(qc: QueryClient, f: (m: ReviewModel) => ReviewModel) {
-  qc.setQueryData<ReviewModel>(QK.review(useUI.getState().sessionId), (m) => (m ? f(m) : m));
+  qc.setQueryData<ReviewModel>(reviewKey(), (m) => (m ? f(m) : m));
 }
 
 function refetch(qc: QueryClient) {
-  return qc.invalidateQueries({ queryKey: QK.review(useUI.getState().sessionId) });
+  return qc.invalidateQueries({ queryKey: reviewKey() });
 }
 
 export async function setViewed(qc: QueryClient, path: string, viewed: boolean) {
@@ -83,11 +83,39 @@ export async function stageCleared(qc: QueryClient) {
 }
 
 /** Hunks marked revert that still exist, for the confirm modal. */
+/** Hunks marked revert that `d` can undo. In a branch review only the
+ * uncommitted ones; committed ones stay as requests for Claude. */
 export function revertTargets(model: ReviewModel | undefined): { path: string; ids: string[] }[] {
   if (!model) return [];
   return Object.entries(model.files)
-    .map(([path, m]) => ({ path, ids: m.hunkIds.filter((id) => model.verdicts[id] === "revert") }))
+    .map(([path, m]) => ({
+      path,
+      ids: m.hunkIds.filter((id) => model.verdicts[id] === "revert" && (m.uncommitted === null || m.uncommitted.includes(id))),
+    }))
     .filter((t) => t.ids.length > 0);
+}
+
+/** Hunks marked revert that are already committed (branch review). */
+export function committedReverts(model: ReviewModel | undefined): number {
+  if (!model?.range) return 0;
+  return Object.values(model.files).reduce(
+    (n, m) => n + m.hunkIds.filter((id) => model.verdicts[id] === "revert" && !(m.uncommitted ?? []).includes(id)).length,
+    0,
+  );
+}
+
+/** Why `a` / `d` can't run in the current review, or null when they can. */
+export function readOnlyReason(model: ReviewModel | undefined): string | null {
+  const r = model?.range;
+  if (!r || r.includesWorktree) return null;
+  return `${r.head} isn't checked out · committed changes are read-only (y/x still record verdicts)`;
+}
+
+/** Cleared files `a` would stage: in a branch review, only those with uncommitted changes. */
+export function stageableCount(model: ReviewModel | undefined): number {
+  return Object.values(model?.files ?? {}).filter(
+    (m) => m.viewed && (m.uncommitted === null || m.uncommitted.length > 0),
+  ).length;
 }
 
 /** After the confirm modal: reverse-apply the reverted hunks. */
