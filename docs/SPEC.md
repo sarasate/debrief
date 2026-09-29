@@ -155,7 +155,9 @@ interface ReviewState {
 | Refresh | `R` | the watcher also refreshes automatically (debounced 300 ms) |
 | Help | `?` | overlay generated from BINDINGS |
 
-Discard implementation: build a single-hunk patch and apply it in reverse to the working tree (`git2::Repository::apply` with `ApplyLocation::WorkDir` on a reversed diff, or `git apply -R` as a fallback). If it fails because the file changed, show a toast and don't touch the file.
+Discard implementation (`git/apply.rs`): for each file, take the current HEAD→worktree hunks, check that each marked hunk's new-side bytes sit exactly at its position in the file, and replace them with its old-side bytes, bottom hunk first. No fuzz: if any marked hunk in a file doesn't match, that file is left untouched and its hunks are reported as failed (toast). A marked hunk id that's no longer in the diff fails the same way. Undoing every hunk of a new file removes the file; undoing a deletion recreates it. If the index entry equals the worktree file (fully staged), it's updated to match, so a commit can't bring the hunk back; any other staged difference is reported as a warning. Viewed marks move to the new blob oid, so our own discard doesn't read as "changed since cleared".
+
+Stage implementation: for each viewed file whose blob oid still matches, the index gets the worktree content minus the reverted hunks (the same reverse step, in memory; the worktree is untouched). No reverted hunks: plain `git add` (or `git rm` for a deletion; renames also drop the old path). Every hunk reverted: the index entry goes back to HEAD, and the file is reported as skipped. Viewed files that changed since are skipped with a reason.
 
 ## 6. Transmitting notes to Claude
 
@@ -193,8 +195,8 @@ review_set_verdict(session_id, hunk_id, verdict | null) -> ()
 notes_add(path, hunk_id?, text) -> Note
 notes_remove(id) -> ()
 notes_transmit(mode) -> TransmitResult
-stage_cleared() -> { staged: string[] }
-discard_reverted() -> { discarded: string[], failed: {hunkId, reason}[] }
+stage_cleared(session_id) -> { staged: string[], skipped: {path, reason}[] }
+discard_reverted(session_id) -> { discarded: string[], failed: {id, path, reason}[], warnings: string[] }
 ```
 Events: `repo://changed` (from the watcher; also watch the session's transcript file so a new Claude write shows up live) and `review://updated`.
 
