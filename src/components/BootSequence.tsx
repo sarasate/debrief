@@ -80,7 +80,7 @@ export function BootSequence() {
           DEADBOLT
         </div>
         <div className="text-center text-[10px] tracking-[0.52em] mb-[30px] text-ink-dimmer">
-          <span className="text-sig-agent">DEBRIEF</span> · AGENT CHANGE REVIEW · v0.1.0
+          <span className="text-sig-agent">DEBRIEF</span> · AGENT CHANGE REVIEW · v{__APP_VERSION__}
         </div>
         <div className="min-h-[168px] text-[12.5px] leading-[2.05] whitespace-pre">
           {all.slice(0, shown).map((ln, i) => (
