@@ -4,6 +4,7 @@ import type { PanelId } from "../lib/keymap";
 export type Grouping = "intent" | "tree";
 export type FileFilter = "all" | "open" | "flagged";
 export type PaletteMode = "commands" | "sessions";
+export type ModalId = "discard";
 
 interface UIState {
   focus: PanelId;
@@ -21,6 +22,7 @@ interface UIState {
   /** Pinned session; null follows the newest one, so a new session shows up by itself. */
   sessionId: string | null;
   palette: PaletteMode | null;
+  modal: ModalId | null;
   helpOpen: boolean;
   toast: { kind: "ok" | "err"; text: string; id: number } | null;
   errPanel: PanelId | null;
@@ -33,6 +35,7 @@ interface UIState {
   toggleGrouping: () => void;
   setSession: (id: string | null) => void;
   openPalette: (mode: PaletteMode | null) => void;
+  openModal: (m: ModalId | null) => void;
   setQuery: (q: string) => void;
   toggleFolder: (dir: string) => void;
   setFolder: (dir: string, collapsed: boolean) => void;
@@ -61,6 +64,7 @@ export const useUI = create<UIState>((set, get) => ({
   hunkId: null,
   sessionId: null,
   palette: null,
+  modal: null,
   helpOpen: false,
   toast: null,
   errPanel: null,
@@ -77,6 +81,7 @@ export const useUI = create<UIState>((set, get) => ({
   toggleGrouping: () => set((s) => ({ grouping: s.grouping === "intent" ? "tree" : "intent" })),
   setSession: (id) => set({ sessionId: id }),
   openPalette: (mode) => set({ palette: mode }),
+  openModal: (m) => set({ modal: m }),
   setQuery: (q) => set({ query: q }),
   toggleFolder: (dir) =>
     set((s) => ({ collapsed: { ...s.collapsed, [dir]: !s.collapsed[dir] } })),

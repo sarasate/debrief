@@ -8,7 +8,7 @@ import { openRepoDialog } from "../lib/openRepo";
 import { pageLines, reveal, scrollPanelByLines, scrollPanelTo } from "../lib/scroll";
 import { QK } from "./useRepo";
 import type { FileDiff, ReviewModel, Verdict } from "../lib/types";
-import { currentModel, setVerdict, setViewed } from "../lib/review";
+import { currentModel, revertTargets, setVerdict, setViewed, stageCleared } from "../lib/review";
 
 export function useKeybindings() {
   const qc = useQueryClient();
@@ -34,6 +34,11 @@ export function useKeybindings() {
       }
       if (ui.helpOpen && e.key !== "Escape" && e.key !== "?") return;
       if (ui.palette && e.key !== "Escape") return;
+      if (ui.modal) {
+        // The modal handles its own keys; Escape always backs out.
+        if (e.key === "Escape") { e.preventDefault(); ui.openModal(null); }
+        return;
+      }
 
       // Ctrl-combos are opt-in: they only match bindings that name them
       // explicitly ("ctrl+d"), so every other browser shortcut stays intact.
@@ -156,6 +161,12 @@ export async function runAction(action: string, qc: QueryClient) {
       ui.setOutput(`${where} → ${next === "keep" ? "kept" : next === "revert" ? "marked for discard" : "undecided"}`);
       return;
     }
+
+    case "ops.stage": await stageCleared(qc); return;
+    case "ops.discard":
+      if (!revertTargets(currentModel(qc)).length) { ui.setOutput("no hunks marked revert · x to mark one"); return; }
+      ui.openModal("discard");
+      return;
 
     // tree
     case "tree.fold": {

@@ -33,11 +33,13 @@ export const BINDINGS: Binding[] = [
   { key: "h", panel: "global", action: "focus.prev", desc: "Previous panel", group: "NAVIGATION" },
   { key: "ArrowLeft", panel: "global", action: "focus.prev", desc: "Previous panel", group: "NAVIGATION" },
 
-  // Review (SPEC §5). Stage, discard and transmit arrive in M5/M6.
+  // Review (SPEC §5). Notes and transmit arrive in M6.
   { key: " ", panel: "global", action: "file.clear", desc: "Clear & next open file", group: "REVIEW", hint: { keys: "spc", label: "clear" } },
   { key: "v", panel: "global", action: "file.viewed", desc: "Toggle viewed", group: "REVIEW" },
   { key: "y", panel: "global", action: "hunk.keep", desc: "Keep hunk (again: undecided)", group: "REVIEW", hint: { keys: "y", label: "keep" } },
   { key: "x", panel: "global", action: "hunk.revert", desc: "Mark hunk for revert (again: undecided)", group: "REVIEW", hint: { keys: "x", label: "revert" } },
+  { key: "a", panel: "global", action: "ops.stage", desc: "Stage cleared files (minus reverted hunks)", group: "REVIEW", cmd: "stage" },
+  { key: "d", panel: "global", action: "ops.discard", desc: "Discard reverted hunks (asks first)", group: "REVIEW", cmd: "discard" },
 
   // Diff — vim scrolling, as in git-ui
   { key: "j", panel: "diff", action: "diff.lineDown", desc: "Line down", group: "DIFF" },

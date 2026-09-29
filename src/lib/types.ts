@@ -164,3 +164,23 @@ export interface ReviewModel {
   /** The session id the progress is stored under, or "worktree". */
   stateKey: string;
 }
+
+// Stage / discard (SPEC §5)
+
+export interface ActionFailure {
+  /** Hunk id for discard, path for stage. */
+  id: string;
+  path: string;
+  reason: string;
+}
+
+export interface StageResult {
+  staged: string[];
+  skipped: ActionFailure[];
+}
+
+export interface DiscardResult {
+  discarded: string[];
+  failed: ActionFailure[];
+  warnings: string[];
+}

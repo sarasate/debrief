@@ -1,5 +1,15 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
-import type { FileDiff, Ledger, RepoInfo, RepoStatus, ReviewModel, SessionInfo, Verdict } from "./types";
+import type {
+  DiscardResult,
+  FileDiff,
+  Ledger,
+  RepoInfo,
+  RepoStatus,
+  ReviewModel,
+  SessionInfo,
+  StageResult,
+  Verdict,
+} from "./types";
 
 export const api = {
   repoOpen: (path: string) => tauriInvoke<RepoInfo>("repo_open", { path }),
@@ -15,6 +25,9 @@ export const api = {
     tauriInvoke<void>("review_set_viewed", { sessionId, path, oid, viewed }),
   reviewSetVerdict: (sessionId: string, hunkId: string, verdict: Verdict | null) =>
     tauriInvoke<void>("review_set_verdict", { sessionId, hunkId, verdict }),
+  stageCleared: (sessionId: string) => tauriInvoke<StageResult>("stage_cleared", { sessionId }),
+  /** Rewrites files on disk: only after the confirm modal. */
+  discardReverted: (sessionId: string) => tauriInvoke<DiscardResult>("discard_reverted", { sessionId }),
 };
 
 /** Tauri rejects with the serialized AppError, which is a plain string. */

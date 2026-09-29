@@ -62,3 +62,49 @@ export function progress(model: ReviewModel | undefined) {
   const pct = relevant.length ? Math.round((viewed / relevant.length) * 100) : 0;
   return { viewed, total: relevant.length, pct, kept, reverted, pending: total - kept - reverted };
 }
+
+/** `a`: stage cleared files. Reports into the command bar. */
+export async function stageCleared(qc: QueryClient) {
+  const model = currentModel(qc);
+  const ui = useUI.getState();
+  if (!model) return;
+  if (!Object.values(model.files).some((m) => m.viewed)) {
+    ui.setOutput("nothing cleared to stage · spc to clear a file");
+    return;
+  }
+  const r = await api.stageCleared(model.stateKey);
+  await qc.invalidateQueries({ queryKey: ["repo"] });
+  const n = r.staged.length;
+  const skipped = r.skipped.map((s) => `${s.path.split("/").pop()} (${s.reason})`);
+  ui.setOutput(
+    `staged ${n} cleared file${n === 1 ? "" : "s"}` + (skipped.length ? ` · skipped ${skipped.join(", ")}` : ""),
+  );
+  if (n) ui.emitToast("ok", `▣ staged ${n} file${n === 1 ? "" : "s"}`);
+}
+
+/** Hunks marked revert that still exist, for the confirm modal. */
+export function revertTargets(model: ReviewModel | undefined): { path: string; ids: string[] }[] {
+  if (!model) return [];
+  return Object.entries(model.files)
+    .map(([path, m]) => ({ path, ids: m.hunkIds.filter((id) => model.verdicts[id] === "revert") }))
+    .filter((t) => t.ids.length > 0);
+}
+
+/** After the confirm modal: reverse-apply the reverted hunks. */
+export async function discardReverted(qc: QueryClient) {
+  const model = currentModel(qc);
+  const ui = useUI.getState();
+  if (!model) return;
+  const r = await api.discardReverted(model.stateKey);
+  await qc.invalidateQueries({ queryKey: ["repo"] });
+  const n = r.discarded.length;
+  ui.setOutput(`discarded ${n} reverted hunk${n === 1 ? "" : "s"}` + (r.failed.length ? ` · ${r.failed.length} failed` : ""));
+  if (r.failed.length) {
+    const f = r.failed[0];
+    ui.emitToast("err", `${f.path ? f.path.split("/").pop() + ": " : ""}${f.reason}` + (r.failed.length > 1 ? ` (+${r.failed.length - 1} more)` : ""));
+  } else if (r.warnings.length) {
+    ui.emitToast("err", r.warnings[0]);
+  } else if (n) {
+    ui.emitToast("ok", `discarded ${n} hunk${n === 1 ? "" : "s"}`);
+  }
+}
