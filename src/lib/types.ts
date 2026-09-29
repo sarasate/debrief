@@ -136,7 +136,13 @@ export interface Flag {
 export interface FileMeta {
   noise: boolean;
   flags: Flag[];
+  viewed: boolean;
+  /** Worktree blob oid, sent back when marking viewed (SPEC §4). */
+  oid: string;
+  hunkIds: string[];
 }
+
+export type Verdict = "keep" | "revert";
 
 export interface NoiseConfig {
   globs: string[];
@@ -152,4 +158,9 @@ export interface ReviewModel {
   groups: IntentGroup[];
   files: Record<string, FileMeta>;
   noise: NoiseConfig;
+  verdicts: Record<string, Verdict>;
+  /** Files whose viewed mark this refresh dropped because they changed. */
+  invalidated: string[];
+  /** The session id the progress is stored under, or "worktree". */
+  stateKey: string;
 }

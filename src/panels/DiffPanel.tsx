@@ -8,7 +8,7 @@ import { groupOf, splitPath } from "../lib/changeset";
 import { errText } from "../lib/invoke";
 import { keyFor } from "../lib/keymap";
 import { useUI } from "../store/ui";
-import type { DiffHunk, DiffLine } from "../lib/types";
+import type { DiffHunk, DiffLine, Verdict } from "../lib/types";
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
@@ -24,6 +24,8 @@ export function DiffPanel() {
   const { data: diff, isLoading, error } = useDiffFile(path);
   const file = status?.files.find((f) => f.path === path);
   const qc = useQueryClient();
+  const { data: viewed } = useReview((m) => (path ? !!m.files[path]?.viewed : false));
+  const { data: verdicts } = useReview((m) => m.verdicts);
 
   // Keep the hunk cursor on a hunk that exists; a refresh can drop it.
   useEffect(() => {
@@ -76,13 +78,20 @@ export function DiffPanel() {
           >
             <span className="text-hud">{keyFor("file.next").toUpperCase()}</span> ↓
           </button>
-          <label className="h-[30px] flex items-center gap-[7px] px-[10px] border border-hud/[.22] text-[10.5px] tracking-[0.12em] text-ink-base opacity-40">
-            <input type="checkbox" disabled readOnly checked={false} className="m-0 accent-[theme(colors.sig.ok)]" />
+          <label className="h-[30px] flex items-center gap-[7px] px-[10px] border border-hud/[.22] text-[10.5px] tracking-[0.12em] text-ink-base cursor-pointer has-[:disabled]:opacity-40">
+            <input
+              type="checkbox"
+              disabled={!file}
+              checked={!!viewed}
+              onChange={() => void runAction("file.viewed", qc)}
+              className="m-0 accent-[theme(colors.sig.ok)]"
+            />
             VIEWED
           </label>
           <button
             type="button"
-            disabled
+            disabled={!file}
+            onClick={() => void runAction("file.clear", qc)}
             className="h-[30px] px-3 border-0 bg-hud text-ink-void font-chrome font-bold tracking-[0.14em] text-[11px] shadow-[0_0_18px_color-mix(in_srgb,var(--ac)_40%,transparent)] disabled:opacity-40"
           >
             SPC · CLEAR &amp; NEXT
@@ -102,7 +111,9 @@ export function DiffPanel() {
         {path && isLoading && <Notice text="DECODING…" />}
         {diff?.isBinary && <Notice text="BINARY FILE — NO PREVIEW" />}
         {diff && !diff.isBinary && diff.hunks.length === 0 && <Notice text="NO TEXTUAL CHANGES" />}
-        {diff?.hunks.map((h) => <Hunk key={h.id} hunk={h} current={h.id === hunkId} />)}
+        {diff?.hunks.map((h) => (
+          <Hunk key={h.id} hunk={h} current={h.id === hunkId} verdict={verdicts?.[h.id] ?? null} />
+        ))}
       </div>
     </HudFrame>
   );
@@ -181,10 +192,18 @@ function Notice({ text, danger = false }: { text: string; danger?: boolean }) {
   );
 }
 
-const verdictBtn =
-  "h-7 px-[10px] text-[10.5px] tracking-[0.14em] border border-hud/20 bg-transparent text-ink-dim disabled:opacity-40";
+const verdictBtn = "dc-hov h-7 px-[10px] text-[10.5px] tracking-[0.14em] border";
+const VERDICT_OFF = "border-hud/20 bg-transparent text-ink-dim";
+const KEEP_ON = "border-sig-okDark bg-sig-okDark/[.22] text-sig-ok";
+const REVERT_ON = "border-sig-dangerDark bg-sig-dangerDark/[.22] text-sig-deleteHi";
 
-function Hunk({ hunk, current }: { hunk: DiffHunk; current: boolean }) {
+function Hunk({ hunk, current, verdict }: { hunk: DiffHunk; current: boolean; verdict: Verdict | null }) {
+  const qc = useQueryClient();
+  const decide = (action: "hunk.keep" | "hunk.revert") => (e: React.MouseEvent) => {
+    e.stopPropagation();
+    useUI.getState().setHunk(hunk.id);
+    void runAction(action, qc);
+  };
   return (
     <div
       data-hunk={hunk.id}
@@ -196,14 +215,17 @@ function Hunk({ hunk, current }: { hunk: DiffHunk; current: boolean }) {
           {hunk.header}
         </span>
         <span className="flex-1" />
-        <button type="button" disabled className={verdictBtn}>
+        {verdict === "revert" && (
+          <span className="text-[10px] tracking-[0.16em] text-sig-danger whitespace-nowrap">MARKED FOR DISCARD</span>
+        )}
+        <button type="button" onClick={decide("hunk.keep")} className={`${verdictBtn} ${verdict === "keep" ? KEEP_ON : VERDICT_OFF}`}>
           <span className="font-bold">Y</span> KEEP
         </button>
-        <button type="button" disabled className={verdictBtn}>
+        <button type="button" onClick={decide("hunk.revert")} className={`${verdictBtn} ${verdict === "revert" ? REVERT_ON : VERDICT_OFF}`}>
           <span className="font-bold">X</span> REVERT
         </button>
       </div>
-      <div className="overflow-x-auto py-[6px]">
+      <div className={["overflow-x-auto py-[6px]", verdict === "revert" ? "opacity-[.35]" : ""].join(" ")}>
         {hunk.lines.map((l, i) => (
           <Line key={i} line={l} />
         ))}

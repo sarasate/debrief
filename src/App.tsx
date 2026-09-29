@@ -11,7 +11,7 @@ import { DiffPanel } from "./panels/DiffPanel";
 import { OpsPanel } from "./panels/OpsPanel";
 import { NotesPanel } from "./panels/NotesPanel";
 import { useKeybindings, runAction } from "./hooks/useKeybindings";
-import { useChangeset, useRepoCurrent, useStatus } from "./hooks/useRepo";
+import { useChangeset, useRepoCurrent, useReview, useStatus } from "./hooks/useRepo";
 import { keyLabel } from "./lib/keymap";
 import { useUI } from "./store/ui";
 
@@ -20,6 +20,7 @@ export default function App() {
   const { data: repo, isLoading } = useRepoCurrent();
   useKeybindings();
   useSelectionSync();
+  useInvalidationNotice();
 
   // Repo-watcher event
   useEffect(() => {
@@ -73,6 +74,18 @@ function useSelectionSync() {
     const exists = !!selected && data.files.some((f) => f.path === selected);
     if (!exists) useUI.getState().select(order[0] ?? null);
   }, [data, order, selected]);
+}
+
+/** "auth.guard.ts changed since cleared" when a refresh drops a viewed mark (SPEC §4). */
+function useInvalidationNotice() {
+  const { data } = useReview((m) => m.invalidated);
+  useEffect(() => {
+    if (!data?.length) return;
+    const name = (p: string) => p.split("/").pop();
+    useUI.getState().setOutput(
+      data.length === 1 ? `${name(data[0])} changed since cleared` : `${data.length} files changed since cleared · back to open`,
+    );
+  }, [data]);
 }
 
 function NoRepo({ onOpen }: { onOpen: () => void }) {

@@ -185,6 +185,7 @@ function FileRow({ row }: { row: Extract<Row, { kind: "file" }> }) {
   const f = row.file;
   const active = useUI((s) => s.selectedPath === f.path);
   const { data: flags } = useReview((m) => m.files[f.path]?.flags);
+  const { data: viewed } = useReview((m) => !!m.files[f.path]?.viewed);
   const { name, dirs } = splitPath(f.path);
 
   return (
@@ -212,7 +213,7 @@ function FileRow({ row }: { row: Extract<Row, { kind: "file" }> }) {
         <span
           className={[
             "text-[12px] whitespace-nowrap overflow-hidden text-ellipsis",
-            active ? "text-ink-bright" : "text-ink-light",
+            active ? "text-ink-bright" : viewed ? "text-ink-faint" : "text-ink-light",
           ].join(" ")}
         >
           {name}
@@ -238,7 +239,9 @@ function FileRow({ row }: { row: Extract<Row, { kind: "file" }> }) {
           <span className="text-[10.5px] text-sig-delete min-w-[24px]">−{f.dels}</span>
         </>
       )}
-      <span className="w-3 text-[11px] text-sig-add" />
+      <span aria-label={viewed ? "Viewed" : undefined} className="w-3 text-[11px] text-sig-add">
+        {viewed ? "✓" : ""}
+      </span>
     </button>
   );
 }

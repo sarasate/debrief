@@ -29,8 +29,10 @@ export interface ChangesetOpts {
   maskNoise: boolean;
 }
 
-// Review state arrives in M4; until then every file is open.
-const isOpen = (_f: ChangedFile) => true;
+/** Not yet cleared (SPEC §4). */
+export function isOpen(model: ReviewModel | undefined, path: string): boolean {
+  return !model?.files[path]?.viewed;
+}
 
 export function isNoise(model: ReviewModel | undefined, path: string): boolean {
   return !!model?.files[path]?.noise;
@@ -43,7 +45,7 @@ export function isFlagged(model: ReviewModel | undefined, path: string): boolean
 export function filterCounts(model: ReviewModel | undefined, base: ChangedFile[]): Record<FileFilter, number> {
   return {
     all: base.length,
-    open: base.filter(isOpen).length,
+    open: base.filter((f) => isOpen(model, f.path)).length,
     flagged: base.filter((f) => isFlagged(model, f.path)).length,
   };
 }
@@ -67,7 +69,7 @@ export function buildChangeset(model: ReviewModel | undefined, opts: ChangesetOp
     (f) => (!opts.maskNoise || !isNoise(model, f.path)) && (!q || f.path.toLowerCase().includes(q)),
   );
   const visible = base.filter((f) =>
-    opts.filter === "open" ? isOpen(f) : opts.filter === "flagged" ? isFlagged(model, f.path) : true,
+    opts.filter === "open" ? isOpen(model, f.path) : opts.filter === "flagged" ? isFlagged(model, f.path) : true,
   );
   const rows =
     opts.grouping === "intent" && model ? intentRows(model, visible) : treeRows(visible, opts.collapsed);

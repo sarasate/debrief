@@ -130,6 +130,9 @@ interface ReviewState {
 ```
 - **Viewed is invalidated automatically** when the file's current blob oid differs from the stored one (Claude or I changed it again). The row goes back to OPEN and the command bar says `auth.guard.ts changed since cleared`.
 - A verdict for a hunk id that no longer exists is dropped silently.
+- The file lives in the repository's git dir (`git rev-parse --git-dir`), so a linked worktree keeps its own progress. With no Claude session the key is `worktree` (`.git/debrief/worktree.json`). Session ids are checked against `[A-Za-z0-9_-]{1,128}` before they become a file name.
+- Nothing is written until the reviewer acts; opening a repo stays read-only. Writes go to a temp file and are renamed into place. A file that doesn't parse is moved aside to `<name>.json.corrupt-<ms>` rather than overwritten.
+- Marking viewed stores the oid the reviewer was shown (sent back from the model), not the oid at write time, so a change that lands while they look still invalidates it. A viewed file that is no longer dirty is dropped silently.
 
 ## 5. Actions
 
@@ -185,8 +188,8 @@ diff_file(path) -> FileDiff                      // HEAD vs workdir, with hunk i
 sessions_list() -> SessionInfo[]                 // for this repo, newest first
 ledger_load(session_id) -> { turns: Turn[], entries: LedgerEntry[] }
 review_model(session_id) -> ReviewModel          // files + groups + noise + flags + state, computed in Rust
-review_set_viewed(path, viewed) -> ()
-review_set_verdict(hunk_id, verdict | null) -> ()
+review_set_viewed(session_id, path, oid, viewed) -> ()  // session_id = model.stateKey
+review_set_verdict(session_id, hunk_id, verdict | null) -> ()
 notes_add(path, hunk_id?, text) -> Note
 notes_remove(id) -> ()
 notes_transmit(mode) -> TransmitResult
