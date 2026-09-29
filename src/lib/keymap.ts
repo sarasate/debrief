@@ -1,6 +1,6 @@
 export type PanelId = "changeset" | "diff";
 
-export type HelpGroup = "NAVIGATION" | "DIFF" | "FILTER" | "SESSION" | "GLOBAL";
+export type HelpGroup = "NAVIGATION" | "REVIEW" | "DIFF" | "FILTER" | "SESSION" | "GLOBAL";
 
 export interface Binding {
   key: string; // KeyboardEvent.key, or "ctrl+x"
@@ -33,6 +33,12 @@ export const BINDINGS: Binding[] = [
   { key: "h", panel: "global", action: "focus.prev", desc: "Previous panel", group: "NAVIGATION" },
   { key: "ArrowLeft", panel: "global", action: "focus.prev", desc: "Previous panel", group: "NAVIGATION" },
 
+  // Review (SPEC §5). Stage, discard and transmit arrive in M5/M6.
+  { key: " ", panel: "global", action: "file.clear", desc: "Clear & next open file", group: "REVIEW", hint: { keys: "spc", label: "clear" } },
+  { key: "v", panel: "global", action: "file.viewed", desc: "Toggle viewed", group: "REVIEW" },
+  { key: "y", panel: "global", action: "hunk.keep", desc: "Keep hunk (again: undecided)", group: "REVIEW", hint: { keys: "y", label: "keep" } },
+  { key: "x", panel: "global", action: "hunk.revert", desc: "Mark hunk for revert (again: undecided)", group: "REVIEW", hint: { keys: "x", label: "revert" } },
+
   // Diff — vim scrolling, as in git-ui
   { key: "j", panel: "diff", action: "diff.lineDown", desc: "Line down", group: "DIFF" },
   { key: "k", panel: "diff", action: "diff.lineUp", desc: "Line up", group: "DIFF" },
@@ -48,7 +54,7 @@ export const BINDINGS: Binding[] = [
   { key: "[", panel: "global", action: "hunk.prev", desc: "Previous hunk", group: "DIFF" },
 
   // Filters
-  { key: "/", panel: "global", action: "filter.query", desc: "Filter by path", group: "FILTER", hint: { keys: "/", label: "filter" } },
+  { key: "/", panel: "global", action: "filter.query", desc: "Filter by path", group: "FILTER" },
   { key: "1", panel: "global", action: "filter.all", desc: "Show all files", group: "FILTER", cmd: "all" },
   { key: "2", panel: "global", action: "filter.open", desc: "Show open files", group: "FILTER", cmd: "open-files" },
   { key: "3", panel: "global", action: "filter.flagged", desc: "Show flagged files", group: "FILTER", cmd: "flagged" },
@@ -61,7 +67,7 @@ export const BINDINGS: Binding[] = [
   { key: ":", panel: "global", action: "palette.open", desc: "Command palette", group: "SESSION" },
 
   // Global
-  { key: "⌘O", panel: "global", action: "repo.open", desc: "Open repository", group: "GLOBAL", hint: { keys: "⌘o", label: "open" }, cmd: "open" },
+  { key: "⌘O", panel: "global", action: "repo.open", desc: "Open repository", group: "GLOBAL", cmd: "open" },
   { key: "R", panel: "global", action: "refresh", desc: "Refresh", group: "GLOBAL", cmd: "refresh" },
   { key: "?", panel: "global", action: "help.toggle", desc: "Help", group: "GLOBAL", hint: { keys: "?", label: "help" }, cmd: "help" },
   { key: "Escape", panel: "global", action: "close", desc: "Close / cancel", group: "GLOBAL" },

@@ -2,12 +2,13 @@ import { useEffect } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useUI } from "../store/ui";
 import { findBinding } from "../lib/keymap";
-import { buildChangeset, splitPath } from "../lib/changeset";
+import { buildChangeset, isOpen, splitPath } from "../lib/changeset";
 import { errText } from "../lib/invoke";
 import { openRepoDialog } from "../lib/openRepo";
 import { pageLines, reveal, scrollPanelByLines, scrollPanelTo } from "../lib/scroll";
 import { QK } from "./useRepo";
-import type { FileDiff, ReviewModel } from "../lib/types";
+import type { FileDiff, ReviewModel, Verdict } from "../lib/types";
+import { currentModel, setVerdict, setViewed } from "../lib/review";
 
 export function useKeybindings() {
   const qc = useQueryClient();
@@ -15,12 +16,13 @@ export function useKeybindings() {
   useEffect(() => {
     const handler = async (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
-      const isEditing =
-        t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
-      if (isEditing) {
+      if (t && isTextEntry(t)) {
         if (e.key === "Escape") t.blur();
         return;
       }
+      // A clicked button or checkbox keeps focus; let space and friends
+      // reach the bindings instead of re-clicking it.
+      if (t && t !== document.body && (t.tagName === "BUTTON" || t.tagName === "INPUT")) t.blur();
 
       const ui = useUI.getState();
 
@@ -54,6 +56,12 @@ export function useKeybindings() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [qc]);
+}
+
+function isTextEntry(t: HTMLElement): boolean {
+  if (t.isContentEditable || t.tagName === "TEXTAREA") return true;
+  if (t.tagName !== "INPUT") return false;
+  return !["checkbox", "radio", "button", "submit", "range"].includes((t as HTMLInputElement).type);
 }
 
 function currentView(qc: QueryClient) {
@@ -104,6 +112,50 @@ export async function runAction(action: string, qc: QueryClient) {
     case "file.prev": selectFile(step(currentView(qc).order, ui.selectedPath, -1)); return;
     case "file.first": selectFile(currentView(qc).order[0] ?? null); return;
     case "file.last": selectFile(currentView(qc).order.slice(-1)[0] ?? null); return;
+
+    // review
+    case "file.viewed": {
+      const path = ui.selectedPath;
+      const meta = path ? currentModel(qc)?.files[path] : undefined;
+      if (!path || !meta) return;
+      await setViewed(qc, path, !meta.viewed);
+      ui.setOutput(splitPath(path).name + (meta.viewed ? " reopened" : " cleared"));
+      return;
+    }
+    case "file.clear": {
+      const path = ui.selectedPath;
+      const model = currentModel(qc);
+      if (!path || !model?.files[path]) return;
+      // Pick the next open file before this one leaves an OPEN-filtered list.
+      const order = currentView(qc).order;
+      const at = order.indexOf(path);
+      const rest = at === -1 ? order : [...order.slice(at + 1), ...order.slice(0, at)];
+      const next = rest.find((p) => p !== path && isOpen(model, p));
+      // The cache is patched synchronously; move on while the write lands.
+      const saved = model.files[path].viewed ? Promise.resolve() : setViewed(qc, path, true);
+      const name = splitPath(path).name;
+      if (next) {
+        selectFile(next);
+        ui.setOutput(`${name} cleared · next ${splitPath(next).name}`);
+      } else {
+        ui.setOutput(`${name} cleared · no open files left`);
+      }
+      await saved;
+      return;
+    }
+    case "hunk.keep":
+    case "hunk.revert": {
+      const v: Verdict = action === "hunk.keep" ? "keep" : "revert";
+      const model = currentModel(qc);
+      const ids = ui.selectedPath ? model?.files[ui.selectedPath]?.hunkIds ?? [] : [];
+      const id = ui.hunkId && ids.includes(ui.hunkId) ? ui.hunkId : null;
+      if (!model || !id) { ui.setOutput("no hunk under the cursor · ]/[ to pick one"); return; }
+      const next = model.verdicts[id] === v ? null : v;
+      await setVerdict(qc, id, next);
+      const where = `hunk ${ids.indexOf(id) + 1}/${ids.length} of ${splitPath(ui.selectedPath!).name}`;
+      ui.setOutput(`${where} → ${next === "keep" ? "kept" : next === "revert" ? "marked for discard" : "undecided"}`);
+      return;
+    }
 
     // tree
     case "tree.fold": {
