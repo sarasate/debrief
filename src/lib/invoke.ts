@@ -2,6 +2,8 @@ import { Channel, invoke as tauriInvoke } from "@tauri-apps/api/core";
 import type {
   DiscardResult,
   Accent,
+  DarkTheme,
+  ThemeMode,
   FileDiff,
   Note,
   Settings,
@@ -52,6 +54,8 @@ export const api = {
     claudePath?: string;
     accent?: Accent;
     scanlines?: boolean;
+    themeMode?: ThemeMode;
+    darkTheme?: DarkTheme;
     consoleHeight?: number;
     terminalApp?: string;
   }) =>
@@ -60,6 +64,8 @@ export const api = {
       claudePath: patch.claudePath ?? null,
       accent: patch.accent ?? null,
       scanlines: patch.scanlines ?? null,
+      themeMode: patch.themeMode ?? null,
+      darkTheme: patch.darkTheme ?? null,
       consoleHeight: patch.consoleHeight ?? null,
       terminalApp: patch.terminalApp ?? null,
     }),

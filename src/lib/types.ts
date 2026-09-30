@@ -263,12 +263,21 @@ export type TransmitMode = "clipboard" | "file" | "resume";
 
 export type Accent = "cyan" | "green" | "amber" | "red";
 
+/** Follow macOS, or force light / dark (docs/PLAN.md M12). */
+export type ThemeMode = "system" | "light" | "dark";
+export type DarkTheme = "deadbolt" | "ember";
+/** What `<html data-theme>` ends up as. */
+export type ThemeName = DarkTheme | "daylight";
+
 export interface Settings {
   lastRepo: string | null;
   transmitMode: TransmitMode;
   claudePath: string | null;
   accent: Accent;
   scanlines: boolean;
+  themeMode: ThemeMode;
+  /** Used by "dark", and by "system" when macOS is dark. */
+  darkTheme: DarkTheme;
   /** Console drawer height, % of the window. */
   consoleHeight: number;
   /** App `O` opens the repo in. */

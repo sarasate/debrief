@@ -18,6 +18,10 @@ pub struct Settings {
     /// The DEADBOLT accents (SPEC §2).
     pub accent: Accent,
     pub scanlines: bool,
+    /// Follow macOS, or force light / dark (docs/PLAN.md M12).
+    pub theme_mode: ThemeMode,
+    /// The dark theme used by `Dark`, and by `System` when macOS is dark.
+    pub dark_theme: DarkTheme,
     /// Console drawer height, % of the window.
     pub console_height: u8,
     /// App `O` opens the repo in (`open -a <app>`).
@@ -32,6 +36,8 @@ impl Default for Settings {
             claude_path: None,
             accent: Accent::default(),
             scanlines: true,
+            theme_mode: ThemeMode::default(),
+            dark_theme: DarkTheme::default(),
             console_height: 40,
             terminal_app: "Terminal".into(),
         }
@@ -46,6 +52,23 @@ pub enum Accent {
     Green,
     Amber,
     Red,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ThemeMode {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DarkTheme {
+    #[default]
+    Deadbolt,
+    Ember,
 }
 
 pub struct SettingsStore {
@@ -112,6 +135,37 @@ mod tests {
         assert_eq!(s.accent, Accent::Cyan);
         assert!(s.scanlines, "scanlines default on");
         assert_eq!((s.console_height, s.terminal_app.as_str()), (40, "Terminal"));
+        assert_eq!((s.theme_mode, s.dark_theme), (ThemeMode::System, DarkTheme::Deadbolt));
+    }
+
+    #[test]
+    fn m11_settings_file_loads_with_theme_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("settings.json");
+        std::fs::write(
+            &file,
+            r#"{"lastRepo":"/r","accent":"amber","scanlines":false,"consoleHeight":55,"terminalApp":"iTerm"}"#,
+        )
+        .unwrap();
+        let s = SettingsStore::load(file).get();
+        assert_eq!((s.accent, s.scanlines, s.console_height), (Accent::Amber, false, 55));
+        assert_eq!((s.theme_mode, s.dark_theme), (ThemeMode::System, DarkTheme::Deadbolt));
+    }
+
+    #[test]
+    fn theme_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("settings.json");
+        SettingsStore::load(file.clone())
+            .update(|s| {
+                s.theme_mode = ThemeMode::Dark;
+                s.dark_theme = DarkTheme::Ember;
+            })
+            .unwrap();
+        let raw = std::fs::read_to_string(&file).unwrap();
+        assert!(raw.contains(r#""themeMode": "dark""#) && raw.contains(r#""darkTheme": "ember""#), "{raw}");
+        let s = SettingsStore::load(file).get();
+        assert_eq!((s.theme_mode, s.dark_theme), (ThemeMode::Dark, DarkTheme::Ember));
     }
 
     #[test]

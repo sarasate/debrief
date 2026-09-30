@@ -11,6 +11,7 @@ mod review;
 mod review_state;
 mod settings;
 mod state;
+mod theme;
 mod time;
 mod transcript;
 mod watcher;
@@ -24,7 +25,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::ipc::{Channel, InvokeResponseBody};
 use review_state::{Note, ReviewStore, TransmitMode, Verdict, NO_SESSION};
 use serde::Serialize;
-use settings::{Accent, Settings};
+use settings::{Accent, DarkTheme, Settings, ThemeMode};
 use settings::SettingsStore;
 use transcript::sessions::{list_sessions, SessionInfo, TranscriptCache};
 use transcript::{projects_dir, repo_roots, slug, Ledger};
@@ -362,9 +363,12 @@ fn settings_set(
     claude_path: Option<String>,
     accent: Option<Accent>,
     scanlines: Option<bool>,
+    theme_mode: Option<ThemeMode>,
+    dark_theme: Option<DarkTheme>,
     console_height: Option<u8>,
     terminal_app: Option<String>,
     settings: State<SettingsStore>,
+    window: tauri::WebviewWindow,
 ) -> AppResult<Settings> {
     if let Some(p) = claude_path.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
         if !std::path::Path::new(p).is_file() {
@@ -377,6 +381,12 @@ fn settings_set(
         }
         if let Some(on) = scanlines {
             s.scanlines = on;
+        }
+        if let Some(m) = theme_mode {
+            s.theme_mode = m;
+        }
+        if let Some(d) = dark_theme {
+            s.dark_theme = d;
         }
         if let Some(h) = console_height {
             s.console_height = h.clamp(15, 85);
@@ -391,7 +401,13 @@ fn settings_set(
             s.claude_path = (!p.trim().is_empty()).then(|| p.trim().to_string());
         }
     })?;
-    Ok(settings.get())
+    let now = settings.get();
+    if theme_mode.is_some() || dark_theme.is_some() {
+        // The page re-themes itself either way; a native miss only leaves
+        // the title bar behind.
+        let _ = theme::apply(&window, &now);
+    }
+    Ok(now)
 }
 
 #[derive(Clone, Serialize)]
@@ -482,6 +498,16 @@ pub fn run() {
         .manage(Consoles::new())
         .manage(QuitConfirmed(AtomicBool::new(false)))
         .on_window_event(|window, event| {
+            // macOS changed appearance: repaint the native background when
+            // following the system. The page follows on its own.
+            if let tauri::WindowEvent::ThemeChanged(system) = event {
+                let app = window.app_handle();
+                if let (Some(settings), Some(w)) =
+                    (app.try_state::<SettingsStore>(), app.get_webview_window(window.label()))
+                {
+                    let _ = theme::follow_system(&w, &settings.get(), *system);
+                }
+            }
             // Closing the window with a command running asks first.
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let app = window.app_handle();
@@ -503,6 +529,10 @@ pub fn run() {
                 let state: State<RepoState> = app.state();
                 let watcher: State<RepoWatcher> = app.state();
                 let _ = attach(Path::new(&last), &state, &watcher, app.handle().clone());
+            }
+            // Before the page's first paint, so startup doesn't flash.
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = theme::apply(&w, &settings.get());
             }
             app.manage(settings);
             Ok(())
