@@ -18,6 +18,7 @@ import { NotesPanel } from "./panels/NotesPanel";
 import { useKeybindings, runAction } from "./hooks/useKeybindings";
 import { useChangeset, useRepoCurrent, useReview, useSettings, useStatus } from "./hooks/useRepo";
 import { keyLabel } from "./lib/keymap";
+import { applyTheme, resolveTheme, useSystemDark } from "./lib/theme";
 import { useUI } from "./store/ui";
 
 export default function App() {
@@ -98,14 +99,21 @@ function useSelectionSync() {
   }, [data, order, selected]);
 }
 
-/** Accent and scanlines from settings, as attributes hud.css keys on. */
+/** Theme, accent and scanlines from settings, as attributes hud.css and
+ * themes.css key on. Until settings load, the pre-paint script's guess in
+ * index.html stands. */
 function useLook() {
   const { data } = useSettings();
+  const systemDark = useSystemDark();
   useEffect(() => {
     const root = document.documentElement;
     root.dataset.accent = data?.accent ?? "cyan";
     root.dataset.scanlines = data?.scanlines === false ? "off" : "on";
   }, [data?.accent, data?.scanlines]);
+  useEffect(() => {
+    if (!data) return;
+    applyTheme(resolveTheme(data.themeMode, data.darkTheme, systemDark), data.themeMode, data.darkTheme);
+  }, [data?.themeMode, data?.darkTheme, systemDark]);
 }
 
 const MAX_DRAWER_LINES = 2000;

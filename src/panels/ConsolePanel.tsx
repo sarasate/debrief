@@ -159,10 +159,16 @@ export function ConsolePanel() {
     if (!focused) term.current?.blur();
   }, [open, focused]);
 
-  // Accent changes recolour the cursor and selection.
+  // A theme or accent change recolours a running console. Watching <html>
+  // rather than settings: App sets these attributes in its own effect,
+  // which runs after this panel's.
   useEffect(() => {
-    if (term.current) term.current.options.theme = readTheme();
-  }, [settings?.accent]);
+    const obs = new MutationObserver(() => {
+      if (term.current) term.current.options.theme = readTheme();
+    });
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-accent"] });
+    return () => obs.disconnect();
+  }, []);
 
   // Refit when the drawer or window changes size.
   useEffect(() => {

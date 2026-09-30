@@ -7,11 +7,12 @@ import { errText } from "../lib/invoke";
 import { openRepoDialog } from "../lib/openRepo";
 import { pageLines, reveal, scrollPanelByLines, scrollPanelTo } from "../lib/scroll";
 import { QK, diffKey, reviewKey } from "./useRepo";
-import type { Accent, FileDiff, ReviewModel, Settings, Verdict } from "../lib/types";
+import type { Accent, DarkTheme, FileDiff, ReviewModel, Settings, ThemeMode, Verdict } from "../lib/types";
 import { committedReverts, currentModel, readOnlyReason, revertTargets, setVerdict, setViewed, stageCleared } from "../lib/review";
 import { focusComposer, removeNote, setTransmitMode, transmit } from "../lib/notes";
 import { api } from "../lib/invoke";
 import { COLLAPSE_LINES } from "../lib/highlight";
+import { resolveTheme, systemIsDark } from "../lib/theme";
 
 export function useKeybindings() {
   const qc = useQueryClient();
@@ -222,6 +223,22 @@ export async function runAction(action: string, qc: QueryClient) {
       const accent = action.split(".")[1] as Accent;
       qc.setQueryData(QK.settings, await api.settingsSet({ accent }));
       ui.setOutput("accent · " + accent);
+      return;
+    }
+    case "theme.system":
+    case "theme.light":
+    case "theme.dark": {
+      const themeMode = action.split(".")[1] as ThemeMode;
+      const s = await api.settingsSet({ themeMode });
+      qc.setQueryData(QK.settings, s);
+      ui.setOutput(`theme · ${themeMode} (${resolveTheme(s.themeMode, s.darkTheme, systemIsDark())})`);
+      return;
+    }
+    case "theme.deadbolt":
+    case "theme.ember": {
+      const darkTheme = action.split(".")[1] as DarkTheme;
+      qc.setQueryData(QK.settings, await api.settingsSet({ themeMode: "dark", darkTheme }));
+      ui.setOutput("theme · " + darkTheme);
       return;
     }
     case "scanlines.toggle": {

@@ -4,6 +4,22 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DEBRIEF</title>
+    <script>
+      // Theme before the first paint (docs/PLAN.md M12): the last theme
+      // settings src/lib/theme.ts saw, resolved like resolveTheme there.
+      // Settings stay the source of truth and correct this once loaded.
+      (function () {
+        var s = {};
+        try {
+          s = JSON.parse(localStorage.getItem("debrief.theme") || "{}") || {};
+        } catch (e) {}
+        var dark = s.dark === "ember" ? "ember" : "deadbolt";
+        var sysDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        var mode = s.mode || "system";
+        document.documentElement.dataset.theme =
+          mode === "light" ? "daylight" : mode === "dark" || sysDark ? dark : "daylight";
+      })();
+    </script>
   </head>
 
   <body>

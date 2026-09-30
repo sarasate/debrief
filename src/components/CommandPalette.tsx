@@ -191,7 +191,7 @@ export function CommandPalette() {
                 ? "filter sessions by title…"
                 : mode === "targets"
                 ? "filter branches…"
-                : "target · session · tree · transmit-mode · accent · claude-path … · help"
+                : "target · session · tree · transmit-mode · theme · accent · claude-path … · help"
             }
             className="flex-1 bg-transparent border-none outline-none text-[15px] text-ink-bright placeholder:text-ink-dimmer"
           />

@@ -95,3 +95,170 @@
   --term-bright-cyan: #8ff6ff;
   --term-bright-white: #eaf6f8;
 }
+
+/* Daylight: DEADBOLT's structure on paper. Signal colours are darkened to
+   about 4.5:1 on bg.panel; the effects are faint and the flicker is off. */
+:root[data-theme="daylight"] {
+  color-scheme: light;
+
+  --bg-base: 233 238 240; /* #e9eef0 */
+  --bg-panel: 247 250 250; /* #f7fafa */
+  --bg-panel-deep: 241 245 246; /* #f1f5f6 */
+  --bg-deep: 225 232 234; /* #e1e8ea */
+  --bg-grad1: 255 255 255; /* #ffffff */
+  --bg-grad2: 238 243 244; /* #eef3f4 */
+
+  --ink-base: 44 58 63; /* #2c3a3f */
+  --ink-bright: 11 20 24; /* #0b1418 */
+  --ink-light: 22 36 42; /* #16242a */
+  --ink-dim: 80 101 107; /* #50656b */
+  --ink-mid: 67 87 93; /* #43575d */
+  --ink-dimmer: 111 131 136; /* #6f8388 */
+  --ink-darkest: 138 156 161; /* #8a9ca1 */
+  --ink-deepest: 163 178 182; /* #a3b2b6 */
+  --ink-label: 95 115 120; /* #5f7378 */
+  --ink-faint: 116 136 141; /* #74888d */
+  --ink-void: 247 250 250; /* #f7fafa */
+  --ink-agent-void: 250 246 255; /* #faf6ff */
+
+  --sig-warn: 148 96 10; /* #94600a */
+  --sig-danger: 200 52 28; /* #c8341c */
+  --sig-ok: 38 122 64; /* #267a40 */
+  --sig-ok-dark: 46 138 74; /* #2e8a4a */
+  --sig-add: 35 113 58; /* #23713a */
+  --sig-delete: 168 57 42; /* #a8392a */
+  --sig-violet: 123 63 208; /* #7b3fd0 */
+  --sig-agent: 123 63 208; /* #7b3fd0 */
+  --sig-warn-ink: 74 54 16; /* #4a3610 */
+  --sig-delete-hi: 208 68 42; /* #d0442a */
+  --sig-danger-ink: 179 48 26; /* #b3301a */
+  --sig-danger-dark: 200 52 28; /* #c8341c */
+
+  --ac-cyan: #077a8c;
+  --ac-green: #147a3d;
+  --ac-amber: #94600a;
+  --ac-red: #c8341c;
+
+  --diff-bg: 0.12;
+
+  --fx-scan: rgba(0, 0, 0, 0.035);
+  --fx-vignette: inset 0 0 160px rgba(0, 0, 0, 0.07);
+  --fx-sweep: 3%;
+  --fx-flick: none;
+
+  --shiki-token-keyword: #0b7285;
+  --shiki-token-constant: #b35a1f;
+  --shiki-token-string: #8a6d00;
+  --shiki-token-string-expression: #8a6d00;
+  --shiki-token-function: #1f5fbf;
+  --shiki-token-parameter: #16242a;
+  --shiki-token-punctuation: #50656b;
+  --shiki-token-comment: #8a9ca1;
+  --shiki-token-link: #0b7285;
+  --shiki-token-inserted: #23713a;
+  --shiki-token-deleted: #a8392a;
+  --shiki-token-changed: #94600a;
+
+  --term-bg: #e1e8ea;
+  --term-fg: #2c3a3f;
+  --term-black: #16242a;
+  --term-red: #c8341c;
+  --term-green: #23713a;
+  --term-yellow: #8a6d00;
+  --term-blue: #1f5fbf;
+  --term-magenta: #7b3fd0;
+  --term-cyan: #0b7285;
+  --term-white: #8a9ca1;
+  --term-bright-black: #6f8388;
+  --term-bright-red: #d0442a;
+  --term-bright-green: #2e8a4a;
+  --term-bright-yellow: #a86a00;
+  --term-bright-blue: #3b7de0;
+  --term-bright-magenta: #9a5fe6;
+  --term-bright-cyan: #0a8ca0;
+  --term-bright-white: #50656b;
+}
+
+/* Ember: warm charcoal and parchment for late reviews. Signals stay close
+   to DEADBOLT's so flags, adds and deletes read the same; the accents are
+   DEADBOLT's. */
+:root[data-theme="ember"] {
+  color-scheme: dark;
+
+  --bg-base: 12 9 7; /* #0c0907 */
+  --bg-panel: 17 12 9; /* #110c09 */
+  --bg-panel-deep: 15 11 8; /* #0f0b08 */
+  --bg-deep: 9 6 5; /* #090605 */
+  --bg-grad1: 26 18 13; /* #1a120d */
+  --bg-grad2: 17 11 8; /* #110b08 */
+
+  --ink-base: 214 198 180; /* #d6c6b4 */
+  --ink-bright: 251 239 226; /* #fbefe2 */
+  --ink-light: 240 226 210; /* #f0e2d2 */
+  --ink-dim: 168 146 126; /* #a8927e */
+  --ink-mid: 185 163 142; /* #b9a38e */
+  --ink-dimmer: 117 98 79; /* #75624f */
+  --ink-darkest: 93 77 63; /* #5d4d3f */
+  --ink-deepest: 74 61 50; /* #4a3d32 */
+  --ink-label: 154 132 113; /* #9a8471 */
+  --ink-faint: 134 112 93; /* #86705d */
+  --ink-void: 10 6 4; /* #0a0604 */
+  --ink-agent-void: 14 6 18; /* #0e0612 */
+
+  --sig-warn: 255 176 0; /* #ffb000 */
+  --sig-danger: 255 106 69; /* #ff6a45 */
+  --sig-ok: 159 212 138; /* #9fd48a */
+  --sig-ok-dark: 78 143 58; /* #4e8f3a */
+  --sig-add: 159 212 138; /* #9fd48a */
+  --sig-delete: 224 144 122; /* #e0907a */
+  --sig-violet: 212 155 255; /* #d49bff */
+  --sig-agent: 212 155 255; /* #d49bff */
+  --sig-warn-ink: 246 228 196; /* #f6e4c4 */
+  --sig-delete-hi: 255 138 102; /* #ff8a66 */
+  --sig-danger-ink: 255 164 140; /* #ffa48c */
+  --sig-danger-dark: 184 80 58; /* #b8503a */
+
+  --ac-cyan: #3df0ff;
+  --ac-green: #39ff7d;
+  --ac-amber: #ffb000;
+  --ac-red: #ff5a3c;
+
+  --diff-bg: 0.16;
+
+  --fx-scan: rgba(0, 0, 0, 0.16);
+  --fx-vignette: inset 0 0 220px rgba(0, 0, 0, 0.72);
+  --fx-sweep: 5%;
+  --fx-flick: flick 8s infinite;
+
+  --shiki-token-keyword: #7fc8c0;
+  --shiki-token-constant: #e08a72;
+  --shiki-token-string: #d9c27a;
+  --shiki-token-string-expression: #d9c27a;
+  --shiki-token-function: #f2d59a;
+  --shiki-token-parameter: #f0e2d2;
+  --shiki-token-punctuation: #a8927e;
+  --shiki-token-comment: #75624f;
+  --shiki-token-link: #7fc8c0;
+  --shiki-token-inserted: #9fd48a;
+  --shiki-token-deleted: #e0907a;
+  --shiki-token-changed: #ffb000;
+
+  --term-bg: #090605;
+  --term-fg: #d6c6b4;
+  --term-black: #1a120d;
+  --term-red: #ff6a45;
+  --term-green: #9fd48a;
+  --term-yellow: #ffb000;
+  --term-blue: #7fa8e0;
+  --term-magenta: #d49bff;
+  --term-cyan: #7fd8d0;
+  --term-white: #d6c6b4;
+  --term-bright-black: #75624f;
+  --term-bright-red: #ff8a66;
+  --term-bright-green: #bfe6a8;
+  --term-bright-yellow: #ffc94d;
+  --term-bright-blue: #a8c8f0;
+  --term-bright-magenta: #e6c0ff;
+  --term-bright-cyan: #a8ece6;
+  --term-bright-white: #fbefe2;
+}

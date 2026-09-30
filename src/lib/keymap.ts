@@ -95,6 +95,11 @@ export const BINDINGS: Binding[] = [
   { key: "", panel: "global", action: "accent.green", desc: "Accent: green", group: "LOOK", cmd: "accent green" },
   { key: "", panel: "global", action: "accent.amber", desc: "Accent: amber", group: "LOOK", cmd: "accent amber" },
   { key: "", panel: "global", action: "accent.red", desc: "Accent: red", group: "LOOK", cmd: "accent red" },
+  { key: "", panel: "global", action: "theme.system", desc: "Theme: follow macOS (Daylight / dark theme)", group: "LOOK", cmd: "theme system" },
+  { key: "", panel: "global", action: "theme.light", desc: "Theme: always light (Daylight)", group: "LOOK", cmd: "theme light" },
+  { key: "", panel: "global", action: "theme.dark", desc: "Theme: always dark", group: "LOOK", cmd: "theme dark" },
+  { key: "", panel: "global", action: "theme.deadbolt", desc: "Theme: DEADBOLT (dark)", group: "LOOK", cmd: "theme deadbolt" },
+  { key: "", panel: "global", action: "theme.ember", desc: "Theme: Ember (dark)", group: "LOOK", cmd: "theme ember" },
   { key: "", panel: "global", action: "scanlines.toggle", desc: "Scanlines on / off", group: "LOOK", cmd: "scanlines" },
   { key: "", panel: "global", action: "settings.claudePath", desc: "Path to claude CLI (empty: auto-detect)", group: "NOTES", cmd: "claude-path <path>" },
 
