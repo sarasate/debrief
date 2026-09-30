@@ -32,12 +32,12 @@ Debrief reads the repo's uncommitted changes and the session's transcript under 
 
 ## Install
 
-Download the DMG from [Releases](https://github.com/sarasate/debrief/releases) (Apple Silicon only) and drag **debrief** to Applications.
+Download the DMG from [Releases](https://github.com/sarasate/debrief/releases) (Apple Silicon only) and drag **Debrief** to Applications.
 
 The app isn't signed or notarized, so macOS blocks the first launch. Right-click the app → **Open** → **Open**, or run:
 
 ```
-xattr -dr com.apple.quarantine /Applications/debrief.app
+xattr -dr com.apple.quarantine /Applications/Debrief.app
 ```
 
 ## Usage
