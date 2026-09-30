@@ -490,6 +490,17 @@ pub fn run() {
     let built = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        // Reopen at the last size and place (app config dir, next to
+        // settings.json). A monitor that's gone puts it back on screen.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::SIZE
+                        | tauri_plugin_window_state::StateFlags::POSITION
+                        | tauri_plugin_window_state::StateFlags::MAXIMIZED,
+                )
+                .build(),
+        )
         .manage(RepoState::new())
         .manage(RepoWatcher::new())
         .manage(TranscriptCache::new())
