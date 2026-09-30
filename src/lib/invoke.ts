@@ -1,4 +1,4 @@
-import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { Channel, invoke as tauriInvoke } from "@tauri-apps/api/core";
 import type {
   DiscardResult,
   Accent,
@@ -47,13 +47,30 @@ export const api = {
   transmitCancel: () => tauriInvoke<boolean>("transmit_cancel"),
   settingsGet: () => tauriInvoke<Settings>("settings_get"),
   /** `claudePath: ""` clears it back to auto-detect. */
-  settingsSet: (patch: { transmitMode?: TransmitMode; claudePath?: string; accent?: Accent; scanlines?: boolean }) =>
+  settingsSet: (patch: {
+    transmitMode?: TransmitMode;
+    claudePath?: string;
+    accent?: Accent;
+    scanlines?: boolean;
+    consoleHeight?: number;
+    terminalApp?: string;
+  }) =>
     tauriInvoke<Settings>("settings_set", {
       transmitMode: patch.transmitMode ?? null,
       claudePath: patch.claudePath ?? null,
       accent: patch.accent ?? null,
       scanlines: patch.scanlines ?? null,
+      consoleHeight: patch.consoleHeight ?? null,
+      terminalApp: patch.terminalApp ?? null,
     }),
+  // Console (M11). Only ever fed what the user types.
+  consoleOpen: (cols: number, rows: number, onOutput: Channel<ArrayBuffer>) =>
+    tauriInvoke<number>("console_open", { cols, rows, onOutput }),
+  consoleWrite: (id: number, data: string) => tauriInvoke<void>("console_write", { id, data }),
+  consoleResize: (id: number, cols: number, rows: number) => tauriInvoke<void>("console_resize", { id, cols, rows }),
+  consoleClose: (id: number) => tauriInvoke<boolean>("console_close", { id }),
+  consoleQuit: () => tauriInvoke<void>("console_quit"),
+  openInTerminal: () => tauriInvoke<string>("open_in_terminal"),
 };
 
 /** Tauri rejects with the serialized AppError, which is a plain string. */

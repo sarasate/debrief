@@ -1,6 +1,6 @@
-export type PanelId = "changeset" | "diff" | "notes";
+export type PanelId = "changeset" | "diff" | "notes" | "console";
 
-export type HelpGroup = "NAVIGATION" | "REVIEW" | "NOTES" | "DIFF" | "FILTER" | "SESSION" | "LOOK" | "GLOBAL";
+export type HelpGroup = "NAVIGATION" | "REVIEW" | "NOTES" | "DIFF" | "FILTER" | "SESSION" | "CONSOLE" | "LOOK" | "GLOBAL";
 
 export interface Binding {
   /** KeyboardEvent.key, or "ctrl+x"; "" for palette-only commands. */
@@ -83,6 +83,12 @@ export const BINDINGS: Binding[] = [
   { key: "B", panel: "global", action: "target.pick", desc: "Review a branch / the working tree", group: "SESSION", cmd: "target" },
   { key: "S", panel: "global", action: "session.pick", desc: "Pick Claude session", group: "SESSION", hint: { keys: ":session", label: "session" }, cmd: "session" },
   { key: ":", panel: "global", action: "palette.open", desc: "Command palette", group: "SESSION" },
+
+  // Console (M11). ⌘ combos never reach the shell, so ⌘J works inside it too.
+  { key: "⌘J", panel: "global", action: "console.toggle", desc: "Show / hide the console", group: "CONSOLE", hint: { keys: "⌘j", label: "console" }, cmd: "console" },
+  { key: "⌘⇧J", panel: "global", action: "console.restart", desc: "Restart the console's shell", group: "CONSOLE" },
+  { key: "O", panel: "global", action: "terminal.open", desc: "Open the repo in your terminal app", group: "CONSOLE", cmd: "terminal" },
+  { key: "", panel: "global", action: "settings.terminalApp", desc: "Terminal app for O (e.g. iTerm, Ghostty)", group: "CONSOLE", cmd: "terminal-app <name>" },
 
   // Look (SPEC §2 tweaks), palette only
   { key: "", panel: "global", action: "accent.cyan", desc: "Accent: cyan", group: "LOOK", cmd: "accent cyan" },

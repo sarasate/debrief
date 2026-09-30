@@ -158,6 +158,9 @@ interface ReviewState {
 | Session picker | `:session` | palette |
 | Refresh | `R` | the watcher also refreshes automatically (debounced 300 ms) |
 | Help | `?` | overlay generated from BINDINGS |
+| Console | `⌘J` | show / hide a login shell in the repo root, from anywhere (docs/PLAN.md M11); while it has focus every other key goes to the shell |
+| Restart console | `⌘⇧J` | new shell after `exit` or a hang |
+| Open in terminal app | `O` | `open -a <terminalApp> <repo>`; the app is set with `:terminal-app <name>` (default Terminal) |
 
 Discard implementation (`git/apply.rs`): for each file, take the current HEAD→worktree hunks, check that each marked hunk's new-side bytes sit exactly at its position in the file, and replace them with its old-side bytes, bottom hunk first. No fuzz: if any marked hunk in a file doesn't match, that file is left untouched and its hunks are reported as failed (toast). A marked hunk id that's no longer in the diff fails the same way. Undoing every hunk of a new file removes the file; undoing a deletion recreates it. If the index entry equals the worktree file (fully staged), it's updated to match, so a commit can't bring the hunk back; any other staged difference is reported as a warning. Viewed marks move to the new blob oid, so our own discard doesn't read as "changed since cleared".
 
@@ -211,11 +214,15 @@ notes_add(session_id, path, hunk_id?, hunk_header?, text) -> Note
 notes_remove(session_id, id) -> ()
 notes_transmit(session_id, resume_session?, force) -> copied | written{path} | started | confirm{message}   // mode from settings; session_id = stateKey
 transmit_cancel() -> bool
-settings_get() / settings_set(transmit_mode?, claude_path?) -> Settings
+settings_get() / settings_set(transmit_mode?, claude_path?, accent?, scanlines?, console_height?, terminal_app?) -> Settings
+console_open(cols, rows, on_output: Channel<bytes>) -> id   // $SHELL -l on a pty in the repo root
+console_write(id, data) · console_resize(id, cols, rows) · console_close(id) -> bool
+console_quit()                                              // after the "command still running" confirmation
+open_in_terminal() -> app
 stage_cleared(session_id) -> { staged: string[], skipped: {path, reason}[] }
 discard_reverted(session_id) -> { discarded: string[], failed: {id, path, reason}[], warnings: string[] }
 ```
-Events: `repo://changed` (from the watcher; also watch the session's transcript file so a new Claude write shows up live), `review://updated`, and `transmit://output` / `transmit://done` for resume mode.
+Events: `repo://changed` (from the watcher; also watch the session's transcript file so a new Claude write shows up live), `review://updated`, `transmit://output` / `transmit://done` for resume mode, and `console://exit` / `console://quit-requested` for the console.
 
 ## 8. Out of scope for v1
 Committing, branches, stash, remotes (use git-ui). Split diff view. Multi-repo. Windows.

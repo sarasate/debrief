@@ -8,6 +8,8 @@ import { CommandPalette } from "./components/CommandPalette";
 import { DiscardModal } from "./components/DiscardModal";
 import { OutputDrawer } from "./components/OutputDrawer";
 import { BootSequence } from "./components/BootSequence";
+import { QuitModal } from "./components/QuitModal";
+import { ConsolePanel } from "./panels/ConsolePanel";
 import { Toast } from "./components/Toast";
 import { ChangesetPanel } from "./panels/ChangesetPanel";
 import { DiffPanel } from "./panels/DiffPanel";
@@ -26,6 +28,16 @@ export default function App() {
   useInvalidationNotice();
   useTransmitEvents();
   useLook();
+  // The resume drawer and the console share a slot; the console wins.
+  const consoleOpen = useUI((s) => s.consoleOpen);
+
+  // Quitting with a command running in the console asks first.
+  useEffect(() => {
+    const unlisten = listen("console://quit-requested", () => useUI.getState().openModal("quit"));
+    return () => {
+      unlisten.then((u) => u());
+    };
+  }, []);
 
   // Repo-watcher event
   useEffect(() => {
@@ -61,10 +73,12 @@ export default function App() {
         )}
       </main>
 
-      <OutputDrawer />
+      <ConsolePanel />
+      {!consoleOpen && <OutputDrawer />}
       <CommandBar />
       <CommandPalette />
       <DiscardModal />
+      <QuitModal />
       <HelpOverlay />
       <Toast />
       <BootSequence />

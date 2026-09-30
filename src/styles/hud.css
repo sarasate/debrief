@@ -211,3 +211,30 @@ input, textarea {
   --shiki-token-changed: #ffb000;
 }
 .dc-diff-del.dc-syntax { filter: saturate(0.7); }
+
+/* Console (M11): xterm.js reads these at runtime. The ANSI colours are
+   the HUD palette; the cursor and selection follow the accent. */
+:root {
+  --term-bg: #05080b;
+  --term-fg: #bcccd0;
+  --term-cursor: var(--ac);
+  --term-selection: color-mix(in srgb, var(--ac) 30%, transparent);
+  --term-black: #0d161d;
+  --term-red: #ff5a3c;
+  --term-green: #7fd49a;
+  --term-yellow: #ffb000;
+  --term-blue: #6fb3ff;
+  --term-magenta: #c08bff;
+  --term-cyan: #3df0ff;
+  --term-white: #bcccd0;
+  --term-bright-black: #5a6e72;
+  --term-bright-red: #ff7a5e;
+  --term-bright-green: #9fe8b4;
+  --term-bright-yellow: #ffc94d;
+  --term-bright-blue: #9fd0ff;
+  --term-bright-magenta: #d9b3ff;
+  --term-bright-cyan: #8ff6ff;
+  --term-bright-white: #eaf6f8;
+}
+.dc-console .xterm { padding: 6px 10px; height: 100%; }
+.dc-console .xterm-viewport { background: transparent !important; }

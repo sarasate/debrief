@@ -19,6 +19,16 @@ export function useKeybindings() {
   useEffect(() => {
     const handler = async (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
+      // ⌘J / ⌘⇧J toggle and restart the console from anywhere, inside it
+      // and inside text fields included: shells never receive ⌘ combos.
+      if (e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === "j" && !useUI.getState().booting) {
+        e.preventDefault();
+        await runAction(e.shiftKey ? "console.restart" : "console.toggle", qc);
+        return;
+      }
+      // Everything else typed into the console belongs to the shell,
+      // Escape included (vim).
+      if (t?.closest("[data-console]")) return;
       if (t && isTextEntry(t)) {
         if (e.key === "Escape") t.blur();
         return;
@@ -218,6 +228,18 @@ export async function runAction(action: string, qc: QueryClient) {
       const on = !(qc.getQueryData<Settings>(QK.settings)?.scanlines ?? true);
       qc.setQueryData(QK.settings, await api.settingsSet({ scanlines: on }));
       ui.setOutput("scanlines " + (on ? "on" : "off"));
+      return;
+    }
+
+    // console
+    case "console.toggle":
+      ui.setConsoleOpen(!ui.consoleOpen);
+      if (!useUI.getState().consoleOpen) (document.activeElement as HTMLElement | null)?.blur();
+      return;
+    case "console.restart": ui.restartConsole(); ui.setOutput("console · restarting shell"); return;
+    case "terminal.open": {
+      const app = await api.openInTerminal();
+      ui.setOutput(`opened the repo in ${app}`);
       return;
     }
 

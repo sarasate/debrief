@@ -269,6 +269,10 @@ export interface Settings {
   claudePath: string | null;
   accent: Accent;
   scanlines: boolean;
+  /** Console drawer height, % of the window. */
+  consoleHeight: number;
+  /** App `O` opens the repo in. */
+  terminalApp: string;
 }
 
 export type TransmitOutcome =

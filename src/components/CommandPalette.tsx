@@ -42,7 +42,25 @@ export function CommandPalette() {
   const items = useMemo<Item[]>(() => {
     const needle = q.trim().toLowerCase();
     if (mode === "commands") {
-      // The one command with an argument: `claude-path <path>`, case kept.
+      // `terminal-app <name>` takes an argument too.
+      const termArg = /^:?terminal-app(?:\s+(.*))?$/i.exec(q.trim());
+      if (termArg) {
+        const name = (termArg[1] ?? "").trim();
+        return [
+          {
+            key: "terminal-app",
+            label: ":terminal-app " + (name || "<name>"),
+            detail: name ? `O opens the repo in ${name}` : "type an app name, e.g. iTerm or Ghostty",
+            run: async () => {
+              if (!name) return;
+              close();
+              qc.setQueryData(QK.settings, await api.settingsSet({ terminalApp: name }));
+              useUI.getState().setOutput("terminal app · " + name);
+            },
+          },
+        ];
+      }
+      // `claude-path <path>` takes an argument, case kept.
       const arg = /^:?claude-path(?:\s+(.*))?$/i.exec(q.trim());
       if (arg) {
         const path = (arg[1] ?? "").trim();
@@ -66,8 +84,8 @@ export function CommandPalette() {
           detail: c.key ? `${c.desc.toLowerCase()} · ${keyLabel(c.key)}` : c.desc.toLowerCase(),
           run: async () => {
             // Takes an argument: pre-fill it and keep the palette open.
-            if (c.action === "settings.claudePath") {
-              setQ("claude-path ");
+            if (c.action === "settings.claudePath" || c.action === "settings.terminalApp") {
+              setQ(c.action === "settings.claudePath" ? "claude-path " : "terminal-app ");
               inputRef.current?.focus();
               return;
             }

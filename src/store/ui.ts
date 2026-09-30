@@ -5,7 +5,7 @@ import type { Target } from "../lib/types";
 export type Grouping = "intent" | "commit" | "tree";
 export type FileFilter = "all" | "open" | "flagged";
 export type PaletteMode = "commands" | "sessions" | "targets";
-export type ModalId = "discard";
+export type ModalId = "discard" | "quit";
 
 interface UIState {
   focus: PanelId;
@@ -41,6 +41,10 @@ interface UIState {
   palette: PaletteMode | null;
   modal: ModalId | null;
   helpOpen: boolean;
+  /** Console drawer shown (M11). Hiding keeps the shell running. */
+  consoleOpen: boolean;
+  /** Bumped to ask the console to restart its shell. */
+  consoleRestart: number;
   booting: boolean;
   toast: { kind: "ok" | "err"; text: string; id: number } | null;
   errPanel: PanelId | null;
@@ -70,6 +74,8 @@ interface UIState {
   setTransmit: (t: UIState["transmit"]) => void;
   setForceUntil: (t: number) => void;
   toggleHelp: () => void;
+  setConsoleOpen: (open: boolean) => void;
+  restartConsole: () => void;
   finishBoot: () => void;
   setOutput: (text: string) => void;
   emitToast: (kind: "ok" | "err", text: string) => void;
@@ -102,6 +108,8 @@ export const useUI = create<UIState>((set, get) => ({
   palette: null,
   modal: null,
   helpOpen: false,
+  consoleOpen: false,
+  consoleRestart: 0,
   booting: true,
   toast: null,
   errPanel: null,
@@ -109,9 +117,11 @@ export const useUI = create<UIState>((set, get) => ({
 
   setFocus: (p) => set({ focus: p }),
   cyclePanel: (dir) => {
-    const i = PANEL_ORDER.indexOf(get().focus);
-    const n = ((i === -1 ? 0 : i) + dir + PANEL_ORDER.length) % PANEL_ORDER.length;
-    set({ focus: PANEL_ORDER[n] });
+    // The console joins the cycle while it's showing.
+    const order: PanelId[] = get().consoleOpen ? [...PANEL_ORDER, "console"] : PANEL_ORDER;
+    const i = order.indexOf(get().focus);
+    const n = ((i === -1 ? 0 : i) + dir + order.length) % order.length;
+    set({ focus: order[n] });
   },
   setFilter: (f) => set({ filter: f }),
   toggleMask: () => set((s) => ({ maskNoise: !s.maskNoise })),
@@ -143,6 +153,9 @@ export const useUI = create<UIState>((set, get) => ({
   setForceUntil: (t) => set({ forceUntil: t }),
   toggleHelp: () => set((s) => ({ helpOpen: !s.helpOpen })),
   finishBoot: () => set({ booting: false }),
+  setConsoleOpen: (open) =>
+    set((s) => ({ consoleOpen: open, focus: open ? "console" : s.focus === "console" ? "diff" : s.focus })),
+  restartConsole: () => set((s) => ({ consoleRestart: s.consoleRestart + 1, consoleOpen: true, focus: "console" })),
   setOutput: (text) => set({ output: text }),
   emitToast: (kind, text) => set({ toast: { kind, text, id: Date.now() } }),
   clearToast: () => set({ toast: null }),
