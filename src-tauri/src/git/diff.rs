@@ -95,6 +95,45 @@ pub fn diff_file(state: &RepoState, path: &str) -> AppResult<FileDiff> {
     Err(AppError::Input(format!("{path} has no uncommitted changes")))
 }
 
+/// Larger files are refused rather than shipped whole to the webview.
+const FULL_FILE_MAX_BYTES: usize = 4 << 20;
+
+/// The new side of a changed file, one entry per line, for the full-file
+/// view: the working tree copy, or the branch tip's blob when the review
+/// doesn't run on to the working tree. A deleted file has no lines. Only
+/// paths in the review diff are read.
+pub fn file_lines(state: &RepoState, path: &str) -> AppResult<Vec<String>> {
+    let repo = state.open()?;
+    let range = super::target::resolve(&repo, &state.target())?;
+    let diff = review_diff(&repo, range.as_ref())?;
+    let delta = diff
+        .deltas()
+        .find(|d| delta_status(d.status()).is_some() && delta_paths(d).0 == path)
+        .ok_or_else(|| AppError::Input(format!("{path} has no uncommitted changes")))?;
+    if delta.status() == Delta::Deleted {
+        return Ok(vec![]);
+    }
+    let bytes = match range.as_ref().filter(|r| !r.includes_worktree) {
+        Some(r) => {
+            let tree = repo.find_commit(r.head_oid()?)?.tree()?;
+            let entry = tree.get_path(std::path::Path::new(path))?;
+            repo.find_blob(entry.id())?.content().to_vec()
+        }
+        None => {
+            let workdir = repo.workdir().ok_or_else(|| AppError::Other("bare repo not supported".into()))?;
+            std::fs::read(workdir.join(path))?
+        }
+    };
+    if bytes.len() > FULL_FILE_MAX_BYTES {
+        return Err(AppError::Input(format!("{path} is over {} MB, too large to show whole", FULL_FILE_MAX_BYTES >> 20)));
+    }
+    if bytes.contains(&0) {
+        return Err(AppError::Input(format!("{path} is binary")));
+    }
+    let text = String::from_utf8_lossy(&bytes);
+    Ok(text.lines().map(|l| l.trim_end_matches('\r').to_string()).collect())
+}
+
 /// Ids of every hunk in `patch`, exactly as `diff_file` reports them.
 pub(crate) fn hunk_ids(patch: &Patch, path: &str) -> AppResult<Vec<String>> {
     Ok(collect_hunks(patch, path)?.into_iter().map(|h| h.id).collect())
@@ -331,5 +370,31 @@ mod tests {
         let fx = Fixture::new();
         fx.commit(&[("a.txt", "a\n")]);
         assert!(diff_file(&fx.state(), "a.txt").is_err());
+    }
+
+    #[test]
+    fn file_lines_reads_the_whole_new_side() {
+        let fx = Fixture::new();
+        let base = numbered(40);
+        fx.commit(&[("a.txt", &base), ("gone.txt", "x\n"), ("clean.txt", "c\n")]);
+        let edited = edit_line(&base, 20, "changed");
+        fx.write("a.txt", &edited);
+        fx.remove("gone.txt");
+
+        let lines = file_lines(&fx.state(), "a.txt").unwrap();
+        assert_eq!(lines.len(), 40);
+        assert_eq!(lines[19], "changed");
+        assert_eq!(lines[0], "line 1");
+        assert!(file_lines(&fx.state(), "gone.txt").unwrap().is_empty());
+        assert!(file_lines(&fx.state(), "clean.txt").is_err(), "only paths in the diff");
+        assert!(file_lines(&fx.state(), "../a.txt").is_err());
+    }
+
+    #[test]
+    fn file_lines_refuses_binary() {
+        let fx = Fixture::new();
+        fx.commit(&[("a.txt", "a\n")]);
+        fx.write_bytes("img.bin", &[0, 159, 146, 150, 0, 1, 2, 3]);
+        assert!(file_lines(&fx.state(), "img.bin").is_err());
     }
 }

@@ -4,7 +4,7 @@ import { COLLAPSE_LINES, tokenize } from "../lib/highlight";
 import { useQueryClient } from "@tanstack/react-query";
 import { HudFrame } from "../components/HudFrame";
 import { StatusChip } from "../components/StatusChip";
-import { useChangeset, useDiffFile, useReview, useStatus } from "../hooks/useRepo";
+import { useChangeset, useDiffFile, useFileLines, useReview, useStatus } from "../hooks/useRepo";
 import { jumpToLine, runAction } from "../hooks/useKeybindings";
 import { groupOf, splitPath } from "../lib/changeset";
 import { errText } from "../lib/invoke";
@@ -25,6 +25,8 @@ export function DiffPanel() {
   const { data: status } = useStatus();
   const { order } = useChangeset();
   const { data: diff, isLoading, error } = useDiffFile(path);
+  const fullFile = useUI((s) => s.fullFile);
+  const { data: fileLines, error: linesError } = useFileLines(path, fullFile && !!diff && !diff.isBinary);
   const file = status?.files.find((f) => f.path === path);
   const qc = useQueryClient();
   const { data: viewed } = useReview((m) => (path ? !!m.files[path]?.viewed : false));
@@ -67,6 +69,15 @@ export function DiffPanel() {
           </span>
           {file && <StatusChip status={file.status} inline />}
           <span className="flex-1" />
+          <button
+            type="button"
+            aria-pressed={fullFile}
+            title="Whole file / changes only"
+            className={`dc-hov ${toolBtn} ${fullFile ? "border-hud/60 text-hud" : ""}`}
+            onClick={() => void runAction("file.full", qc)}
+          >
+            <span className="text-hud">{keyFor("file.full").toUpperCase()}</span> {fullFile ? "WHOLE FILE" : "CHANGES"}
+          </button>
           <span className="flex-none text-[10.5px] tracking-[0.12em] text-ink-faint whitespace-nowrap">{position}</span>
           <button
             type="button"
@@ -118,16 +129,22 @@ export function DiffPanel() {
         {path && isLoading && <Notice text="DECODING…" />}
         {diff?.isBinary && <Notice text="BINARY FILE — NO PREVIEW" />}
         {diff && !diff.isBinary && diff.hunks.length === 0 && <Notice text="NO TEXTUAL CHANGES" />}
-        {diff?.hunks.map((h) => (
-          <Hunk
-            key={h.id}
-            path={diff.path}
-            hunk={h}
-            current={h.id === hunkId}
-            verdict={verdicts?.[h.id] ?? null}
-            committed={!!uncommitted && !uncommitted.includes(h.id)}
-          />
-        ))}
+        {fullFile && linesError && <Notice text={errText(linesError)} danger />}
+        {diff &&
+          segments(diff.hunks, fullFile ? fileLines : undefined).map((s) =>
+            s.kind === "gap" ? (
+              <Unchanged key={`gap:${s.newStart}`} path={diff.path} gap={s} />
+            ) : (
+              <Hunk
+                key={s.hunk.id}
+                path={diff.path}
+                hunk={s.hunk}
+                current={s.hunk.id === hunkId}
+                verdict={verdicts?.[s.hunk.id] ?? null}
+                committed={!!uncommitted && !uncommitted.includes(s.hunk.id)}
+              />
+            ),
+          )}
       </div>
     </HudFrame>
   );
@@ -287,18 +304,81 @@ const VERDICT_OFF = "border-hud/20 bg-transparent text-ink-dim";
 const KEEP_ON = "border-sig-okDark bg-sig-okDark/[.22] text-sig-ok";
 const REVERT_ON = "border-sig-dangerDark bg-sig-dangerDark/[.22] text-sig-deleteHi";
 
-function useTokens(path: string, hunk: DiffHunk, enabled: boolean) {
+/** `key` names the content: the same key must mean the same lines. */
+function useTokens(key: string, path: string, lines: string[], enabled: boolean) {
   const [tokens, setTokens] = useState<ThemedToken[][] | null>(null);
   useEffect(() => {
     if (!enabled) return;
     let live = true;
     setTokens(null);
-    void tokenize(`${path}:${hunk.id}`, path, hunk.lines.map((l) => l.content)).then((t) => live && setTokens(t));
+    void tokenize(key, path, lines).then((t) => live && setTokens(t));
     return () => {
       live = false;
     };
-  }, [path, hunk, enabled]);
+    // `lines` is left out on purpose: `key` stands for it.
+  }, [key, path, enabled]);
   return tokens;
+}
+
+/** A run of unchanged lines between hunks in the whole-file view. */
+interface Gap {
+  kind: "gap";
+  newStart: number;
+  oldStart: number;
+  lines: string[];
+}
+type Segment = Gap | { kind: "hunk"; hunk: DiffHunk };
+
+/**
+ * Hunks in order, with the new-side lines no hunk covers between them when
+ * `file` is given. A hunk with no new lines (a pure deletion) sits after
+ * line `newStart`; the old side's offset is carried across each hunk.
+ */
+function segments(hunks: DiffHunk[], file: string[] | undefined): Segment[] {
+  if (!file) return hunks.map((hunk) => ({ kind: "hunk", hunk }));
+  const out: Segment[] = [];
+  let next = 1; // next new-side line not yet shown
+  let offset = 0; // old line = new line + offset, outside hunks
+  const gap = (to: number) => {
+    if (to >= next) out.push({ kind: "gap", newStart: next, oldStart: next + offset, lines: file.slice(next - 1, to) });
+  };
+  for (const hunk of [...hunks].sort((a, b) => a.newStart - b.newStart)) {
+    gap(hunk.newLines ? hunk.newStart - 1 : hunk.newStart);
+    out.push({ kind: "hunk", hunk });
+    const nextNew = hunk.newLines ? hunk.newStart + hunk.newLines : hunk.newStart + 1;
+    const nextOld = hunk.oldLines ? hunk.oldStart + hunk.oldLines : hunk.oldStart + 1;
+    next = Math.max(next, nextNew);
+    offset = nextOld - nextNew;
+  }
+  gap(file.length);
+  return out;
+}
+
+/** Cheap content hash, so a highlight cache key changes with the text. */
+function hashLines(lines: string[]): string {
+  let h = 5381;
+  for (const l of lines) {
+    for (let i = 0; i < l.length; i++) h = ((h << 5) + h + l.charCodeAt(i)) | 0;
+    h = ((h << 5) + h + 10) | 0;
+  }
+  return (h >>> 0).toString(36);
+}
+
+function Unchanged({ path, gap }: { path: string; gap: Gap }) {
+  const lines: DiffLine[] = gap.lines.map((content, i) => ({
+    kind: "context",
+    content,
+    oldLineno: gap.oldStart + i,
+    newLineno: gap.newStart + i,
+  }));
+  const tokens = useTokens(`${path}:gap:${gap.newStart}:${hashLines(gap.lines)}`, path, gap.lines, true);
+  return (
+    <div className="flex-none overflow-x-auto py-[6px] opacity-80">
+      {lines.map((l, i) => (
+        <Line key={i} line={l} tokens={tokens?.[i]} />
+      ))}
+    </div>
+  );
 }
 
 function Hunk({
@@ -317,7 +397,7 @@ function Hunk({
   const qc = useQueryClient();
   const large = hunk.lines.length > COLLAPSE_LINES;
   const open = useUI((s) => !large || !!s.expanded[hunk.id]);
-  const tokens = useTokens(path, hunk, open);
+  const tokens = useTokens(`${path}:${hunk.id}`, path, hunk.lines.map((l) => l.content), open);
   const decide = (action: "hunk.keep" | "hunk.revert") => (e: React.MouseEvent) => {
     e.stopPropagation();
     useUI.getState().setHunk(hunk.id);

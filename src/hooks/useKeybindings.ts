@@ -323,6 +323,13 @@ export async function runAction(action: string, qc: QueryClient) {
     case "diff.halfUp": scrollPanelByLines("diff", -Math.ceil(pageLines("diff") / 2)); return;
     case "diff.pageDown": scrollPanelByLines("diff", pageLines("diff")); return;
     case "diff.pageUp": scrollPanelByLines("diff", -pageLines("diff")); return;
+    case "file.full": {
+      ui.toggleFullFile();
+      const on = useUI.getState().fullFile;
+      ui.setOutput(on ? "whole file · unchanged lines shown" : "changes only");
+      if (on && ui.hunkId) requestAnimationFrame(() => reveal("diff", `[data-hunk="${ui.hunkId}"]`, "start"));
+      return;
+    }
     case "hunk.expand": {
       const diff = qc.getQueryData<FileDiff>(diffKey(ui.selectedPath));
       const h = diff?.hunks.find((x) => x.id === ui.hunkId);

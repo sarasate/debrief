@@ -145,6 +145,8 @@ interface ReviewState {
 | Next / prev file | `j` / `k` (list), `J` / `K` (from anywhere) | follows the current grouping order, wrapping around |
 | Scroll diff | `ctrl+d/u/f/b`, `g`/`G` | as in git-ui |
 | Next / prev hunk | `]` / `[` | |
+| Whole file | `o` | toggles the diff between changes only and the whole file: the unchanged lines between hunks show as context, hunks keep their verdicts; the new side is read from the working tree or the branch tip |
+| Expand large hunk | `e` | hunks over 300 lines start collapsed |
 | Toggle viewed | `v` | |
 | Clear & next | `space` | mark viewed, go to the next OPEN file |
 | Keep / revert hunk | `y` / `x` | toggles; pressing it again clears the verdict |
@@ -203,6 +205,7 @@ Implementation notes (M6):
 repo_open(path) -> RepoInfo
 repo_status() -> RepoStatus                      // for the current target
 diff_file(path) -> FileDiff                      // current target, with hunk ids
+file_lines(path) -> string[]                     // new side of a changed file, for the whole-file view
 target_list() -> { base, branches: {name, ahead, behind, checkedOut, updatedAt, subject}[] }
 target_set(worktree | branch{head, base?}) -> Range | null   // merge-base, tip, ahead/behind, includesWorktree
 sessions_list() -> SessionInfo[]                 // for this repo, newest first

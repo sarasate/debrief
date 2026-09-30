@@ -93,6 +93,12 @@ fn diff_file(path: String, state: State<RepoState>) -> AppResult<FileDiff> {
     git::diff::diff_file(&state, &path)
 }
 
+/// The whole new side of a changed file, for the full-file view.
+#[tauri::command]
+fn file_lines(path: String, state: State<RepoState>) -> AppResult<Vec<String>> {
+    git::diff::file_lines(&state, &path)
+}
+
 /// Sessions for the open repo, newest first.
 #[tauri::command]
 fn sessions_list(state: State<RepoState>, cache: State<TranscriptCache>) -> AppResult<Vec<SessionInfo>> {
@@ -553,6 +559,7 @@ pub fn run() {
             repo_current,
             repo_status,
             diff_file,
+            file_lines,
             sessions_list,
             ledger_load,
             review_model,

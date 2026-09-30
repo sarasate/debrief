@@ -18,6 +18,7 @@ export const QK = {
   sessions: ["repo", "sessions"] as const,
   settings: ["settings"] as const,
   diffFile: (path: string | null, target: string) => ["repo", "diff", target, path] as const,
+  fileLines: (path: string | null, target: string) => ["repo", "file", target, path] as const,
 };
 
 /** The review query key for the UI's current session pin and target. */
@@ -73,6 +74,16 @@ export function useDiffFile(path: string | null) {
     queryKey: QK.diffFile(path, target),
     queryFn: () => api.diffFile(path!),
     enabled: !!path,
+  });
+}
+
+/** Only fetched while the full-file view is on. */
+export function useFileLines(path: string | null, enabled: boolean) {
+  const target = useUI((s) => targetKey(s.target));
+  return useQuery({
+    queryKey: QK.fileLines(path, target),
+    queryFn: () => api.fileLines(path!),
+    enabled: !!path && enabled,
   });
 }
 

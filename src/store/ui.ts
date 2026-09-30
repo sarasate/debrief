@@ -25,6 +25,8 @@ interface UIState {
   hunkPinned: boolean;
   /** Hunks over the large-diff limit that the reviewer opened. */
   expanded: Record<string, boolean>;
+  /** Diff shows the whole file, unchanged lines between the hunks included. */
+  fullFile: boolean;
   noteDraft: string;
   /** "file" after N: the next note ignores the hunk cursor. */
   noteScope: "auto" | "file";
@@ -68,6 +70,7 @@ interface UIState {
   select: (path: string | null) => void;
   setHunk: (id: string | null, pinned?: boolean) => void;
   toggleExpanded: (id: string, open?: boolean) => void;
+  toggleFullFile: () => void;
   setNoteDraft: (t: string) => void;
   setNoteScope: (s: "auto" | "file") => void;
   setNotesCursor: (i: number) => void;
@@ -98,6 +101,7 @@ export const useUI = create<UIState>((set, get) => ({
   hunkId: null,
   hunkPinned: false,
   expanded: {},
+  fullFile: false,
   noteDraft: "",
   noteScope: "auto",
   notesCursor: 0,
@@ -146,6 +150,7 @@ export const useUI = create<UIState>((set, get) => ({
     set((s) => (s.selectedPath === path ? {} : { selectedPath: path, hunkId: null, hunkPinned: false })),
   setHunk: (id, pinned = true) => set({ hunkId: id, hunkPinned: pinned && id != null }),
   toggleExpanded: (id, open) => set((s) => ({ expanded: { ...s.expanded, [id]: open ?? !s.expanded[id] } })),
+  toggleFullFile: () => set((s) => ({ fullFile: !s.fullFile })),
   setNoteDraft: (t) => set({ noteDraft: t }),
   setNoteScope: (s) => set({ noteScope: s }),
   setNotesCursor: (i) => set({ notesCursor: i }),

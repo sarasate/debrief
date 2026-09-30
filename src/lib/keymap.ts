@@ -68,7 +68,8 @@ export const BINDINGS: Binding[] = [
   { key: "ctrl+b", panel: "global", action: "diff.pageUp", desc: "Page up", group: "DIFF" },
   { key: "]", panel: "global", action: "hunk.next", desc: "Next hunk", group: "DIFF", hint: { keys: "]/[", label: "hunk" } },
   { key: "[", panel: "global", action: "hunk.prev", desc: "Previous hunk", group: "DIFF" },
-  { key: "o", panel: "global", action: "hunk.expand", desc: "Expand / collapse a large hunk", group: "DIFF" },
+  { key: "o", panel: "global", action: "file.full", desc: "Whole file / changes only", group: "DIFF", hint: { keys: "o", label: "full" }, cmd: "full" },
+  { key: "e", panel: "global", action: "hunk.expand", desc: "Expand / collapse a large hunk", group: "DIFF" },
 
   // Filters
   { key: "/", panel: "global", action: "filter.query", desc: "Filter by path", group: "FILTER" },

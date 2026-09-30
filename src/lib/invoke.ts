@@ -26,6 +26,8 @@ export const api = {
   repoCurrent: () => tauriInvoke<RepoInfo | null>("repo_current"),
   repoStatus: () => tauriInvoke<RepoStatus>("repo_status"),
   diffFile: (path: string) => tauriInvoke<FileDiff>("diff_file", { path }),
+  /** The whole new side of a changed file, for the full-file view. */
+  fileLines: (path: string) => tauriInvoke<string[]>("file_lines", { path }),
   sessionsList: () => tauriInvoke<SessionInfo[]>("sessions_list"),
   ledgerLoad: (sessionId: string) => tauriInvoke<Ledger>("ledger_load", { sessionId }),
   /** `sessionId` null picks the newest session for the repo. */
