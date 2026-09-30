@@ -10,7 +10,10 @@ import type {
   TransmitMode,
   TransmitOutcome,
   Ledger,
+  OpenResult,
   RepoInfo,
+  RepoPeek,
+  WorkspaceScan,
   RepoStatus,
   ReviewModel,
   SessionInfo,
@@ -24,7 +27,12 @@ import type {
 } from "./types";
 
 export const api = {
-  repoOpen: (path: string) => tauriInvoke<RepoInfo>("repo_open", { path }),
+  /** A repo, or a folder of repos that becomes the workspace root. */
+  repoOpen: (path: string) => tauriInvoke<OpenResult>("repo_open", { path }),
+  /** null when no workspace root is set. `fresh` walks the root again. */
+  workspaceScan: (fresh: boolean) => tauriInvoke<WorkspaceScan | null>("workspace_scan", { fresh }),
+  workspaceStatus: (paths: string[]) => tauriInvoke<RepoPeek[]>("workspace_status", { paths }),
+  workspaceClear: () => tauriInvoke<Settings>("workspace_clear"),
   repoCurrent: () => tauriInvoke<RepoInfo | null>("repo_current"),
   repoStatus: () => tauriInvoke<RepoStatus>("repo_status"),
   diffFile: (path: string) => tauriInvoke<FileDiff>("diff_file", { path }),

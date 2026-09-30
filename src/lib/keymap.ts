@@ -115,7 +115,10 @@ export const BINDINGS: Binding[] = [
   { key: "", panel: "global", action: "settings.claudePath", desc: "Path to claude CLI (empty: auto-detect)", group: "NOTES", cmd: "claude-path <path>" },
 
   // Global
-  { key: "⌘O", panel: "global", action: "repo.open", desc: "Open repository", group: "GLOBAL", cmd: "open" },
+  { key: "⌘O", panel: "global", action: "repo.open", desc: "Open repository or workspace folder", group: "GLOBAL", cmd: "open" },
+  // Workspace root (M14). The hint only shows while a root is set.
+  { key: "P", panel: "global", action: "workspace.pick", desc: "Switch to a repo in the workspace", group: "GLOBAL", hint: { keys: "P", label: "project" }, cmd: "project" },
+  { key: "", panel: "global", action: "workspace.clear", desc: "Forget the workspace root", group: "GLOBAL", cmd: "workspace-clear" },
   { key: "R", panel: "global", action: "refresh", desc: "Refresh", group: "GLOBAL", cmd: "refresh" },
   { key: "?", panel: "global", action: "help.toggle", desc: "Help", group: "GLOBAL", hint: { keys: "?", label: "help" }, cmd: "help" },
   { key: "Escape", panel: "global", action: "close", desc: "Close / cancel", group: "GLOBAL" },

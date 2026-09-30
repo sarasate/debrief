@@ -3,6 +3,35 @@ export interface RepoInfo {
   name: string;
 }
 
+/** What ⌘O opened (docs/PLAN.md M14). */
+export type OpenResult = { kind: "repo"; info: RepoInfo } | { kind: "root"; scan: WorkspaceScan };
+
+export interface WorkspaceRepo {
+  name: string;
+  path: string;
+  /** Relative to the root. */
+  rel: string;
+  worktree: boolean;
+  /** Newest transcript write, ms since epoch. */
+  lastSession: number | null;
+}
+
+export interface WorkspaceScan {
+  root: string;
+  name: string;
+  repos: WorkspaceRepo[];
+  truncated: boolean;
+}
+
+export interface RepoPeek {
+  path: string;
+  /** "HEAD" when detached. */
+  branch: string | null;
+  changed: number | null;
+  /** HEAD commit time, ms since epoch. */
+  lastCommit: number | null;
+}
+
 export interface HeadInfo {
   branch: string | null;
   sha: string;
@@ -312,6 +341,8 @@ export type ThemeName = DarkTheme | "daylight";
 
 export interface Settings {
   lastRepo: string | null;
+  /** A folder of repos `P` picks from (M14). */
+  workspaceRoot: string | null;
   transmitMode: TransmitMode;
   claudePath: string | null;
   accent: Accent;

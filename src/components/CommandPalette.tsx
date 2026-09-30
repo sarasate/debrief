@@ -4,7 +4,8 @@ import { useUI } from "../store/ui";
 import { BINDINGS, keyLabel } from "../lib/keymap";
 import { api, errText } from "../lib/invoke";
 import { runAction } from "../hooks/useKeybindings";
-import { QK, useReview, useSessions, useTargets } from "../hooks/useRepo";
+import { QK, usePeeks, useRepoCurrent, useReview, useSessions, useTargets, useWorkspace } from "../hooks/useRepo";
+import { switchRepo } from "../lib/openRepo";
 import { switchTarget } from "../lib/target";
 import { agoLabel } from "../hooks/useNow";
 
@@ -13,6 +14,7 @@ interface Item {
   label: string;
   detail: string;
   mark?: string;
+  tags?: { label: string; tone: "agent" | "dim" }[];
   run: () => Promise<void> | void;
 }
 
@@ -31,11 +33,24 @@ export function CommandPalette() {
   const { data: activeHead } = useReview((m) => m.range?.head ?? null);
   const { data: current } = useReview((m) => m.session?.id ?? null);
   const pinned = useUI((s) => s.sessionId);
+  const { data: scan, isLoading: scanLoading, error: scanError } = useWorkspace(mode === "projects");
+  const { data: peeks } = usePeeks(scan, mode === "projects");
+  const { data: repo } = useRepoCurrent();
+  const activeRepo = repo ? trimSlash(repo.workdir) : null;
+
+  // The root folder has gone: the backend forgot it; say so and close.
+  useEffect(() => {
+    if (mode !== "projects" || !scanError) return;
+    useUI.getState().emitToast("err", errText(scanError));
+    useUI.getState().openPalette(null);
+    void qc.invalidateQueries({ queryKey: QK.settings });
+    qc.removeQueries({ queryKey: ["workspace"] });
+  }, [mode, scanError, qc]);
 
   useEffect(() => {
     if (!mode) return;
     setQ("");
-    setSel(0);
+    setSel(-1);
     setTimeout(() => inputRef.current?.focus(), 0);
   }, [mode]);
 
@@ -97,6 +112,34 @@ export function CommandPalette() {
       );
     }
     const now = Date.now();
+    if (mode === "projects") {
+      const peekBy = new Map((peeks ?? []).map((p) => [p.path, p]));
+      const repos = (scan?.repos ?? [])
+        .filter((r) => !needle || r.name.toLowerCase().includes(needle) || r.rel.toLowerCase().includes(needle))
+        .sort((a, b) => (b.lastSession ?? -1) - (a.lastSession ?? -1) || a.name.localeCompare(b.name));
+      return repos.map((r): Item => {
+        const p = peekBy.get(r.path);
+        const changed = !p ? "…" : p.changed === null ? "status unreadable" : p.changed === 0 ? "clean" : `${p.changed} changed`;
+        const session = r.lastSession ? `claude ${agoLabel(r.lastSession, now).toLowerCase()}` : "no claude session";
+        // A session newer than the last commit probably left changes to review.
+        const fresh = !!p && !!r.lastSession && r.lastSession > (p.lastCommit ?? 0);
+        return {
+          key: r.path,
+          label: r.name,
+          detail: [r.rel, p ? p.branch ?? "no HEAD" : "…", changed, session].join(" · "),
+          mark: trimSlash(r.path) === activeRepo ? "ACTIVE" : undefined,
+          tags: [
+            ...(fresh ? [{ label: "CLAUDE", tone: "agent" as const }] : []),
+            ...(r.worktree ? [{ label: "WORKTREE", tone: "dim" as const }] : []),
+          ],
+          run: async () => {
+            close();
+            if (trimSlash(r.path) === activeRepo) return;
+            await switchRepo(qc, r.path);
+          },
+        };
+      });
+    }
     if (mode === "targets") {
       const base = targets?.base ?? null;
       const active = (name: string | null) => (activeHead ?? null) === name;
@@ -151,9 +194,13 @@ export function CommandPalette() {
     return [auto, ...list].filter(
       (i) => !needle || i.label.toLowerCase().includes(needle) || i.detail.toLowerCase().includes(needle),
     );
-  }, [mode, q, sessions, current, pinned, qc, targets, activeHead]);
+  }, [mode, q, sessions, current, pinned, qc, targets, activeHead, scan, peeks, activeRepo]);
 
   if (!mode) return null;
+
+  // Opening the picker puts the cursor on the first repo that isn't the
+  // open one, so `P ⏎` jumps to the most recent other repo.
+  const cur = sel >= 0 ? Math.min(sel, items.length - 1) : Math.max(0, mode === "projects" ? items.findIndex((i) => !i.mark) : 0);
 
   async function exec(i: Item) {
     try {
@@ -171,7 +218,7 @@ export function CommandPalette() {
       >
         <div className="flex items-center gap-3 px-[18px] py-[15px] border-b border-hud/20">
           <span className="text-[20px] text-hud [text-shadow:0_0_12px_color-mix(in_srgb,var(--ac)_60%,transparent)]">
-            {mode === "sessions" ? "⌁" : mode === "targets" ? "⎇" : ":"}
+            {mode === "sessions" ? "⌁" : mode === "targets" ? "⎇" : mode === "projects" ? "▤" : ":"}
           </span>
           <input
             ref={inputRef}
@@ -190,21 +237,28 @@ export function CommandPalette() {
             }}
             onKeyDown={(e) => {
               if (e.key === "Escape") { e.preventDefault(); close(); }
-              if (e.key === "ArrowDown") { e.preventDefault(); setSel((s) => Math.min(items.length - 1, s + 1)); }
-              if (e.key === "ArrowUp") { e.preventDefault(); setSel((s) => Math.max(0, s - 1)); }
-              if (e.key === "Enter" && items[sel]) { e.preventDefault(); void exec(items[sel]); }
+              if (e.key === "ArrowDown") { e.preventDefault(); setSel(Math.min(items.length - 1, cur + 1)); }
+              if (e.key === "ArrowUp") { e.preventDefault(); setSel(Math.max(0, cur - 1)); }
+              if (e.key === "Enter" && items[cur]) { e.preventDefault(); void exec(items[cur]); }
             }}
             placeholder={
               mode === "sessions"
                 ? "filter sessions by title…"
                 : mode === "targets"
                 ? "filter branches…"
-                : "target · session · tree · transmit-mode · theme · accent · claude-path … · help"
+                : mode === "projects"
+                ? "filter repos by name or path…"
+                : "project · target · session · tree · transmit-mode · theme · accent · claude-path … · help"
             }
             className="flex-1 bg-transparent border-none outline-none text-[15px] text-ink-bright placeholder:text-ink-dimmer"
           />
           {mode === "targets" && (
             <span className="text-[10px] tracking-[0.2em] text-hud whitespace-nowrap">REVIEW TARGET</span>
+          )}
+          {mode === "projects" && (
+            <span className="text-[10px] tracking-[0.2em] text-hud whitespace-nowrap uppercase">
+              WORKSPACE · {scan?.name ?? "—"}
+            </span>
           )}
           {mode === "sessions" && (
             <span className="text-[10px] tracking-[0.2em] text-sig-agent whitespace-nowrap">CLAUDE SESSIONS</span>
@@ -218,11 +272,22 @@ export function CommandPalette() {
               onMouseMove={() => setSel(i)}
               className="relative cursor-pointer flex items-center gap-4 px-[13px] py-[10px]"
             >
-              {i === sel && <div className="absolute inset-0 pointer-events-none bg-hud/[.11] border-l-2 border-hud" />}
+              {i === cur && <div className="absolute inset-0 pointer-events-none bg-hud/[.11] border-l-2 border-hud" />}
               <span className="relative z-[1] flex-1 min-w-0 flex flex-col gap-[2px]">
                 <span className="text-[13px] text-ink-light whitespace-nowrap overflow-hidden text-ellipsis">{it.label}</span>
                 <span className="text-[11px] text-ink-dimmer whitespace-nowrap overflow-hidden text-ellipsis">{it.detail}</span>
               </span>
+              {it.tags?.map((t) => (
+                <span
+                  key={t.label}
+                  className={[
+                    "relative z-[1] px-[6px] py-px text-[10px] tracking-[0.16em] border",
+                    t.tone === "agent" ? "border-sig-agent/50 text-sig-agent" : "border-ink-dim/40 text-ink-dim",
+                  ].join(" ")}
+                >
+                  {t.label}
+                </span>
+              ))}
               {it.mark && (
                 <span className="relative z-[1] px-[6px] py-px text-[10px] tracking-[0.16em] border border-sig-agent/50 text-sig-agent">
                   {it.mark}
@@ -230,14 +295,26 @@ export function CommandPalette() {
               )}
             </li>
           ))}
+          {mode === "projects" && scanLoading && <li className="px-3 py-2 text-ink-dimmer text-xs">scanning workspace…</li>}
+          {mode === "projects" && !scanLoading && scan && !scan.repos.length && (
+            <li className="px-3 py-2 text-ink-dimmer text-xs">no repos under {scan.root} any more · R rescans</li>
+          )}
+          {mode === "projects" && scan?.truncated && (
+            <li className="px-3 py-2 text-ink-dimmer text-xs">stopped at {scan.repos.length} repos · pick a narrower root</li>
+          )}
           {mode === "targets" && targetsLoading && <li className="px-3 py-2 text-ink-dimmer text-xs">reading branches…</li>}
           {mode === "sessions" && isLoading && <li className="px-3 py-2 text-ink-dimmer text-xs">scanning transcripts…</li>}
           {mode === "sessions" && !isLoading && !sessions?.length && (
             <li className="px-3 py-2 text-ink-dimmer text-xs">no Claude Code sessions found for this repo</li>
           )}
-          {items.length === 0 && mode === "commands" && <li className="px-3 py-2 text-ink-dimmer italic text-xs">no matches</li>}
+          {items.length === 0 && (mode === "commands" || (mode === "projects" && !!scan?.repos.length)) && <li className="px-3 py-2 text-ink-dimmer italic text-xs">no matches</li>}
         </ul>
       </div>
     </div>
   );
+}
+
+/** git2 reports workdirs with a trailing slash; the scan doesn't. */
+function trimSlash(p: string): string {
+  return p.length > 1 ? p.replace(/\/+$/, "") : p;
 }

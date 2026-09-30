@@ -3,7 +3,7 @@ import { useMemo } from "react";
 import { api } from "../lib/invoke";
 import { buildChangeset } from "../lib/changeset";
 import { useUI } from "../store/ui";
-import type { ReviewModel, Target } from "../lib/types";
+import type { ReviewModel, Target, WorkspaceScan } from "../lib/types";
 
 /** A stable string for a target, for query keys. */
 export function targetKey(t: Target): string {
@@ -17,6 +17,9 @@ export const QK = {
   targets: ["repo", "targets"] as const,
   sessions: ["repo", "sessions"] as const,
   settings: ["settings"] as const,
+  // Outside "repo": the watcher only covers the open repo.
+  workspace: ["workspace", "scan"] as const,
+  peeks: (root: string | null) => ["workspace", "peeks", root] as const,
   diffFile: (path: string | null, target: string) => ["repo", "diff", target, path] as const,
   fileLines: (path: string | null, target: string, sha: string | null) => ["repo", "file", target, path, sha] as const,
   log: (target: string) => ["repo", "log", target] as const,
@@ -64,6 +67,22 @@ export function useSessions(enabled: boolean) {
 
 export function useSettings() {
   return useQuery({ queryKey: QK.settings, queryFn: api.settingsGet, staleTime: Infinity });
+}
+
+/** The repos under the workspace root, session ages fresh on each open. */
+export function useWorkspace(enabled: boolean) {
+  return useQuery({ queryKey: QK.workspace, queryFn: () => api.workspaceScan(false), enabled, retry: false });
+}
+
+/** Branch, changed count and HEAD time per repo; filled in after the list shows. */
+export function usePeeks(scan: WorkspaceScan | null | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: QK.peeks(scan?.root ?? null),
+    queryFn: () => api.workspaceStatus(scan!.repos.map((r) => r.path)),
+    enabled: enabled && !!scan?.repos.length,
+    staleTime: 10_000,
+    placeholderData: (prev) => prev,
+  });
 }
 
 export function useTargets(enabled: boolean) {

@@ -1,9 +1,12 @@
-import { useRepoCurrent, useReview } from "../hooks/useRepo";
+import { useRepoCurrent, useReview, useSettings } from "../hooks/useRepo";
+import { useUI } from "../store/ui";
 import { agoLabel, useNow } from "../hooks/useNow";
 
 export function StatusStrip() {
   const { data: repo } = useRepoCurrent();
   const { data: model } = useReview();
+  const { data: settings } = useSettings();
+  const root = settings?.workspaceRoot?.split("/").filter(Boolean).pop() ?? null;
   const data = model?.status;
   const session = model?.session ?? null;
   // Claude's last edit when a session is linked, else the newest dirty file.
@@ -32,9 +35,21 @@ export function StatusStrip() {
           DEBRIEF
         </div>
         <div className="flex-1 min-w-0 flex items-center gap-7 px-5 text-[11px] tracking-[0.13em] text-ink-label overflow-hidden">
-          <span className="flex-none whitespace-nowrap">
-            REPO <span className="text-ink-light uppercase">{repo?.name ?? "—"}</span>
-          </span>
+          {root ? (
+            <button
+              type="button"
+              title="switch repo · P"
+              onClick={() => useUI.getState().openPalette("projects")}
+              className="flex-none whitespace-nowrap tracking-[0.13em] hover:text-ink-light"
+            >
+              REPO <span className="text-ink-dim uppercase">{root} /</span>{" "}
+              <span className="text-ink-light uppercase">{repo?.name ?? "—"}</span>
+            </button>
+          ) : (
+            <span className="flex-none whitespace-nowrap">
+              REPO <span className="text-ink-light uppercase">{repo?.name ?? "—"}</span>
+            </span>
+          )}
           {/* The branch label is the one that gives way on a narrow window. */}
           <span title={range ? `${range.head} ← ${range.base}` : undefined} className="min-w-0 whitespace-nowrap overflow-hidden text-ellipsis">
             BRANCH{" "}

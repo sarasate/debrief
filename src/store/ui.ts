@@ -4,7 +4,7 @@ import type { Target } from "../lib/types";
 
 export type Grouping = "intent" | "commit" | "tree";
 export type FileFilter = "all" | "open" | "flagged";
-export type PaletteMode = "commands" | "sessions" | "targets";
+export type PaletteMode = "commands" | "sessions" | "targets" | "projects";
 export type ModalId = "discard" | "quit";
 export type LeftView = "changeset" | "history";
 

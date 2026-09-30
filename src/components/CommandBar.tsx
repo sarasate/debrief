@@ -1,10 +1,14 @@
 import { useUI } from "../store/ui";
 import { BINDINGS } from "../lib/keymap";
+import { useSettings } from "../hooks/useRepo";
 
-const HINTS = BINDINGS.flatMap((b) => (b.hint ? [b.hint] : []));
+const HINTS = BINDINGS.flatMap((b) => (b.hint ? [{ ...b.hint, action: b.action }] : []));
 
 export function CommandBar() {
   const output = useUI((s) => s.output);
+  const { data: settings } = useSettings();
+  // `P project` only means something while a workspace root is set.
+  const hints = HINTS.filter((h) => h.action !== "workspace.pick" || !!settings?.workspaceRoot);
 
   return (
     <footer className="relative z-10 flex-none h-10 flex items-center gap-[14px] pl-[14px] pr-3 border-t border-hud/20 bg-bg-deep">
@@ -17,7 +21,7 @@ export function CommandBar() {
       </span>
       <span className="flex-1" />
       <span className="text-[10.5px] tracking-[0.08em] text-ink-faint whitespace-nowrap">
-        {HINTS.map((h, i) => (
+        {hints.map((h, i) => (
           <span key={h.keys}>
             {i > 0 && " · "}
             <span className="text-hud">{h.keys}</span> {h.label}

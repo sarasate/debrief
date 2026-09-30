@@ -439,7 +439,23 @@ export async function runAction(action: string, qc: QueryClient) {
 
     // global
     case "repo.open": await openRepoDialog(qc); return;
+    case "workspace.pick": {
+      const settings = qc.getQueryData<Settings>(QK.settings);
+      if (!settings?.workspaceRoot) { ui.setOutput(`no workspace root · ${keyLabel("⌘O")} a folder of repos`); return; }
+      ui.openPalette("projects");
+      return;
+    }
+    case "workspace.clear": {
+      qc.setQueryData(QK.settings, await api.workspaceClear());
+      qc.removeQueries({ queryKey: ["workspace"] });
+      ui.setOutput("workspace root cleared");
+      return;
+    }
     case "refresh":
+      if (qc.getQueryData<Settings>(QK.settings)?.workspaceRoot) {
+        qc.setQueryData(QK.workspace, await api.workspaceScan(true));
+        void qc.invalidateQueries({ queryKey: ["workspace", "peeks"] });
+      }
       await qc.invalidateQueries({ queryKey: ["repo"] });
       ui.setOutput("resynced with worktree");
       return;

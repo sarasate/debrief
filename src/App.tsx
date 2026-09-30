@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useQueryClient } from "@tanstack/react-query";
 import { StatusStrip } from "./components/StatusStrip";
@@ -35,6 +35,18 @@ export default function App() {
   const consoleOpen = useUI((s) => s.consoleOpen);
   const leftView = useUI((s) => s.leftView);
   const logSha = useUI((s) => s.logSha);
+  const booting = useUI((s) => s.booting);
+  const { data: settings } = useSettings();
+  const root = settings?.workspaceRoot ?? null;
+
+  // A workspace root and no repo (none yet, or the last one has gone):
+  // start on the picker instead of the empty screen (docs/PLAN.md M14).
+  const [pickedAtStart, setPickedAtStart] = useState(false);
+  useEffect(() => {
+    if (pickedAtStart || isLoading || booting || !settings) return;
+    setPickedAtStart(true);
+    if (!repo && root) useUI.getState().openPalette("projects");
+  }, [pickedAtStart, isLoading, booting, settings, repo, root]);
 
   // Quitting with a command running in the console asks first.
   useEffect(() => {
@@ -73,7 +85,9 @@ export default function App() {
             </div>
           </>
         ) : (
-          !isLoading && <NoRepo onOpen={() => void runAction("repo.open", qc)} />
+          !isLoading && (
+            <NoRepo onOpen={() => void runAction("repo.open", qc)} onPick={root ? () => void runAction("workspace.pick", qc) : null} />
+          )
         )}
       </main>
 
@@ -162,7 +176,7 @@ function useInvalidationNotice() {
   }, [data]);
 }
 
-function NoRepo({ onOpen }: { onOpen: () => void }) {
+function NoRepo({ onOpen, onPick }: { onOpen: () => void; onPick: (() => void) | null }) {
   return (
     <div className="flex-1 flex items-center justify-center">
       <div className="relative w-[440px] flex flex-col gap-4 px-7 py-6 bg-bg-panel border border-hud/[.13]">
@@ -179,6 +193,15 @@ function NoRepo({ onOpen }: { onOpen: () => void }) {
         >
           {keyLabel("⌘O")} · OPEN REPOSITORY
         </button>
+        {onPick && (
+          <button
+            type="button"
+            onClick={onPick}
+            className="self-start h-[34px] px-4 border border-hud text-hud font-chrome font-bold tracking-[0.14em] text-[11px]"
+          >
+            {keyLabel("P")} · PICK FROM WORKSPACE
+          </button>
+        )}
       </div>
     </div>
   );

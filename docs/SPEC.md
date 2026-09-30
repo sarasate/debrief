@@ -164,6 +164,8 @@ interface ReviewState {
 | Help | `?` | overlay generated from BINDINGS |
 | Console | `⌘J` | show / hide a login shell in the repo root, from anywhere (docs/PLAN.md M11); while it has focus every other key goes to the shell |
 | Restart console | `⌘⇧J` | new shell after `exit` or a hang |
+| Open repo / workspace | `⌘O` | a repo opens; a folder of repos becomes the workspace root (docs/PLAN.md M14) |
+| Switch repo | `P` | picker over the repos under the workspace root; `:workspace-clear` forgets the root |
 | Open in terminal app | `O` | `open -a <terminalApp> <repo>`; the app is set with `:terminal-app <name>` (default Terminal) |
 
 Discard implementation (`git/apply.rs`): for each file, take the current HEAD→worktree hunks, check that each marked hunk's new-side bytes sit exactly at its position in the file, and replace them with its old-side bytes, bottom hunk first. No fuzz: if any marked hunk in a file doesn't match, that file is left untouched and its hunks are reported as failed (toast). A marked hunk id that's no longer in the diff fails the same way. Undoing every hunk of a new file removes the file; undoing a deletion recreates it. If the index entry equals the worktree file (fully staged), it's updated to match, so a commit can't bring the hunk back; any other staged difference is reported as a warning. Viewed marks move to the new blob oid, so our own discard doesn't read as "changed since cleared".
@@ -204,7 +206,10 @@ Implementation notes (M6):
 ## 7. Tauri commands
 
 ```
-repo_open(path) -> RepoInfo
+repo_open(path) -> repo{info: RepoInfo} | root{scan: WorkspaceScan}   // ⌘O: a repo, or a folder of repos (M14)
+workspace_scan(fresh) -> WorkspaceScan | null    // repos under the root (walk cached, session ages fresh); null with no root
+workspace_status(paths) -> { path, branch?, changed?, lastCommit? }[]   // only paths the last scan listed
+workspace_clear() -> Settings
 repo_status() -> RepoStatus                      // for the current target
 diff_file(path) -> FileDiff                      // current target, with hunk ids
 file_lines(path, sha?) -> string[]               // new side of a changed file, for the whole-file view; with sha, the file in that commit
@@ -232,4 +237,4 @@ discard_reverted(session_id) -> { discarded: string[], failed: {id, path, reason
 Events: `repo://changed` (from the watcher; also watch the session's transcript file so a new Claude write shows up live), `review://updated`, `transmit://output` / `transmit://done` for resume mode, and `console://exit` / `console://quit-requested` for the console.
 
 ## 8. Out of scope for v1
-Committing, branches, stash, remotes (use git-ui). Split diff view. Multi-repo. Windows.
+Committing, branches, stash, remotes (use git-ui). Split diff view. Reviewing several repos at once (the workspace root switches between them, one at a time). Windows.
