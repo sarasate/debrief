@@ -148,30 +148,37 @@ console_close(id)                                           // kills the shell a
 - **`` ctrl+shift+` ``** restarts a shell that has exited, or kills a stuck one after asking.
 - **`^c` conflict:** M6's `^c` (stop a resume) only applies outside the console.
 
+**Copy and paste (macOS).** The console follows Terminal.app and iTerm; `ctrl` belongs to the shell, `⌘` to the app:
+
+| Keys | In the console |
+|---|---|
+| `⌘C` | Copy the selection. With nothing selected it does nothing; it never interrupts. |
+| `ctrl+c` | Interrupt the running command (SIGINT), as in any terminal. |
+| `⌘V` | Paste, as a bracketed paste so shells don't run pasted lines one by one. |
+| `⌘A` | Select all scrollback. |
+| `⌘K` | Clear the screen and scrollback. |
+| `⌥` + key | Sent as Meta (xterm's `macOptionIsMeta`), so readline's `⌥B` / `⌥F` word jumps work. |
+
+- **Selecting:** a drag selects, and selecting doesn't copy on its own.
+- **Relies on:** ⌘C / ⌘V reach xterm through the macOS Edit menu Tauri installs by default (the same path text fields use today), and the global key handler already ignores `⌘` combos. M11 checks both by hand, since a headless test can't press ⌘C.
+
 **Safety, and CLAUDE.md.** The console is the one place Debrief runs arbitrary commands, so the rules need an explicit exception rather than an implied one:
 - **Only you type.** Debrief never writes into the console on its own: no pre-filled commands, and no "run this" buttons built from transcript `Bash` commands, git output or anything else. "Transcripts are data" still holds.
 - **CLAUDE.md gets one line:** *"Exception: the console (M11) runs whatever the user types in it, as the user; Debrief itself never sends input to it."*
 - **Quitting with a command still running** asks first.
 
-### Decisions needed
+### Decisions (settled 2026-09-30)
 
-1. **Drawer or separate window?**
-   - (a) A drawer in the main window: stays with the review, is keyboard-first, and needs one webview.
-   - (b) A separate native window (a second Tauri `WebviewWindow`): can go on another screen, but needs its own focus handling and capability.
-   
-   **Recommended: (a), with "pop out to window" as a later addition.**
-2. **Shortcut.**
-   - (a) `` ctrl+` ``, as in VS Code: it works inside the terminal without stealing a key the shell needs.
-   - (b) `` ` `` alone: faster, but you then can't type a backtick in the shell (command substitution) without a workaround.
-   
-   **Recommended: (a).**
-3. **Also offer "open in my terminal app"?** `O` would open Terminal / iTerm / Ghostty at the repo root with macOS `open`. It's cheap, and it's what people want for long sessions. **Recommended: yes, as a second binding, with the app configurable in settings.**
+1. **A drawer in the main window.** "Pop out to its own window" is a later addition.
+2. **`` ctrl+` ``** toggles the console. A bare `` ` `` stays free for the shell.
+3. **`O` opens the repo in your terminal app** (Terminal, iTerm or Ghostty via macOS `open`; which one is a setting, Terminal by default).
+4. **`⌘C` copies and `ctrl+c` interrupts**, as in Terminal.app (see "Copy and paste").
 
 ### M11 — Console
 **Prompt:**
-> Implement the console from docs/PLAN.md "Console (M11)": a `console` Rust module on portable-pty (login shell, repo root as working directory, TERM=xterm-256color, output streamed over a Tauri Channel as bytes, resize, kill the process group on close, repo switch and app exit), the four console commands, and a resizable drawer with xterm.js + fit addon themed from CSS variables in hud.css. Bindings in BINDINGS: `` ctrl+` `` toggle and focus (also `:console`), `` ctrl+shift+` `` restart; every other key goes to the shell when it has focus, including Escape. Add the CLAUDE.md exception line. Apply the decisions recorded in the plan. Tests: spawn a shell in a temp dir, write `pwd` and `echo $TERM`, read both back; resize; close kills a running `sleep`.
+> Implement the console from docs/PLAN.md "Console (M11)": a `console` Rust module on portable-pty (login shell, repo root as working directory, TERM=xterm-256color, output streamed over a Tauri Channel as bytes, resize, kill the process group on close, repo switch and app exit), the four console commands, and a resizable drawer with xterm.js + fit addon themed from CSS variables in hud.css. Bindings in BINDINGS: `` ctrl+` `` toggle and focus (also `:console`), `` ctrl+shift+` `` restart, `O` open the repo in the terminal app from settings; every other key goes to the shell when it has focus, including Escape. macOS keys as in "Copy and paste": `⌘C` copies (never interrupts), `ctrl+c` interrupts, `⌘V` bracketed paste, `⌘A`, `⌘K` clear, `⌥` as Meta. Add the CLAUDE.md exception line. Apply the decisions recorded in the plan. Tests: spawn a shell in a temp dir, write `pwd` and `echo $TERM`, read both back; resize; close kills a running `sleep`.
 
-Done when: `` ctrl+` `` opens a shell in the repo under review, I can run the tests and use `vim` in it, hide it with a command still running and bring it back with the output intact, and the review refreshes from what the command changed.
+Done when: `` ctrl+` `` opens a shell in the repo under review, I can run the tests and use `vim` in it, hide it with a command still running and bring it back with the output intact, the review refreshes from what the command changed, and `⌘C` / `⌘V` copy and paste while `ctrl+c` stops a running command.
 
 ---
 
