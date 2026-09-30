@@ -135,7 +135,7 @@ console_close(id)                                           // kills the shell a
 
 **Lifetime.**
 - **One console per repo**, started on first open. Hiding it doesn't stop the shell, so a running command keeps going, and showing it again brings back the scrollback.
-- **Stopped:** opening another repo or quitting the app kills it and its process group. A shell that exits on its own (`exit`) shows "shell exited · ^` to restart".
+- **Stopped:** opening another repo or quitting the app kills it and its process group. A shell that exits on its own (`exit`) shows "shell exited · ⌘⇧J to restart".
 - **Watcher:** it needs no changes. Files the console writes refresh the review through the existing watcher, like any other edit.
 
 **Layout.** A drawer between the panels and the command bar, where the resume output drawer sits (they share the slot; the console wins while it's open).
@@ -143,10 +143,10 @@ console_close(id)                                           // kills the shell a
 - **Look:** styled as a `HudFrame` (`▣ CONSOLE · <repo> · <shell>`). xterm's ANSI palette comes from CSS variables in `hud.css`, so no raw hex goes into components.
 
 **Keys.**
-- **`C`** (from the review, like `B` for branches and `S` for sessions) opens the console, or focuses it if it's already open. It never hides it, so one stray key can't hide a running command. `:console` in the palette does the same.
-- **`` ctrl+` ``** is the way out, and the one console key that works inside it: it hides the console and returns focus to the review. From the review it toggles the console, as in VS Code.
+- **`⌘J`** toggles the console from anywhere, including inside it (shells never receive ⌘ combos, as in VS Code's panel toggle). Hidden: it opens and takes focus. Showing: it hides and focus returns to the review. `:console` in the palette does the same.
+- **While it's showing**, the console joins the panel cycle, so `h` / `l` / `Tab` from the review can move focus into it without hiding the review. Clicking it focuses it too.
 - **Inside the console, every other key goes to the shell,** including Escape (for vim), `ctrl+c`, `ctrl+d` and the single-letter review keys. The global handler already ignores text fields; it gets an explicit rule so Escape doesn't blur the terminal.
-- **`` ctrl+shift+` ``** restarts a shell that has exited, or kills a stuck one after asking.
+- **`⌘⇧J`** restarts a shell that has exited, or kills a stuck one after asking.
 - **`^c` conflict:** M6's `^c` (stop a resume) only applies outside the console.
 
 **Copy and paste (macOS).** The console follows Terminal.app and iTerm; `ctrl` belongs to the shell, `⌘` to the app:
@@ -171,15 +171,15 @@ console_close(id)                                           // kills the shell a
 ### Decisions (settled 2026-09-30)
 
 1. **A drawer in the main window.** "Pop out to its own window" is a later addition.
-2. **`C` opens and focuses the console, and `` ctrl+` `` hides it** (it also toggles from the review). Inside the console a typed `C` goes to the shell, as does a bare `` ` ``.
+2. **`⌘J` toggles the console**, from the review and from inside it. `⌘M` stays macOS's Minimize, and bare letters and `` ` `` stay with the review and the shell.
 3. **`O` opens the repo in your terminal app** (Terminal, iTerm or Ghostty via macOS `open`; which one is a setting, Terminal by default).
 4. **`⌘C` copies and `ctrl+c` interrupts**, as in Terminal.app (see "Copy and paste").
 
 ### M11 — Console
 **Prompt:**
-> Implement the console from docs/PLAN.md "Console (M11)": a `console` Rust module on portable-pty (login shell, repo root as working directory, TERM=xterm-256color, output streamed over a Tauri Channel as bytes, resize, kill the process group on close, repo switch and app exit), the four console commands, and a resizable drawer with xterm.js + fit addon themed from CSS variables in hud.css. Bindings in BINDINGS: `C` open or focus (never hides; also `:console`), `` ctrl+` `` hide from inside or toggle from the review, `` ctrl+shift+` `` restart, `O` open the repo in the terminal app from settings; every other key goes to the shell when it has focus, including Escape. macOS keys as in "Copy and paste": `⌘C` copies (never interrupts), `ctrl+c` interrupts, `⌘V` bracketed paste, `⌘A`, `⌘K` clear, `⌥` as Meta. Add the CLAUDE.md exception line. Apply the decisions recorded in the plan. Tests: spawn a shell in a temp dir, write `pwd` and `echo $TERM`, read both back; resize; close kills a running `sleep`.
+> Implement the console from docs/PLAN.md "Console (M11)": a `console` Rust module on portable-pty (login shell, repo root as working directory, TERM=xterm-256color, output streamed over a Tauri Channel as bytes, resize, kill the process group on close, repo switch and app exit), the four console commands, and a resizable drawer with xterm.js + fit addon themed from CSS variables in hud.css. Bindings in BINDINGS: `⌘J` toggle from anywhere (xterm hands it back via attachCustomKeyEventHandler; also `:console`), `⌘⇧J` restart, the console in the h/l/Tab panel cycle while it shows, `O` open the repo in the terminal app from settings; every other key goes to the shell when it has focus, including Escape. macOS keys as in "Copy and paste": `⌘C` copies (never interrupts), `ctrl+c` interrupts, `⌘V` bracketed paste, `⌘A`, `⌘K` clear, `⌥` as Meta. Add the CLAUDE.md exception line. Apply the decisions recorded in the plan. Tests: spawn a shell in a temp dir, write `pwd` and `echo $TERM`, read both back; resize; close kills a running `sleep`.
 
-Done when: `C` opens a shell in the repo under review and `` ctrl+` `` takes me back, I can run the tests and use `vim` in it, hide it with a command still running and bring it back with the output intact, the review refreshes from what the command changed, and `⌘C` / `⌘V` copy and paste while `ctrl+c` stops a running command.
+Done when: `⌘J` opens a shell in the repo under review and `⌘J` again takes me back, I can run the tests and use `vim` in it, hide it with a command still running and bring it back with the output intact, the review refreshes from what the command changed, and `⌘C` / `⌘V` copy and paste while `ctrl+c` stops a running command.
 
 ---
 
