@@ -1,49 +1,39 @@
+/** `{ base: "rgb(var(--bg-base) / <alpha-value>)", … }` for a token group. */
+function tokens(group, names) {
+  const kebab = (n) => n.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase());
+  return Object.fromEntries(
+    names.map((n) => [n, `rgb(var(--${group}-${kebab(n)}) / <alpha-value>)`]),
+  );
+}
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
-        bg: {
-          base: "#06090c",
-          panel: "#080d10",
-          panelDeep: "#070b0e",
-          deep: "#05080b",
-          grad1: "#0d161d",
-          grad2: "#080f14",
-        },
-        ac: "#3df0ff", // default accent — overridden at runtime via --ac
+        // Every palette colour is a theme variable (src/styles/themes.css),
+        // stored as RGB channels so alpha modifiers like `/45` keep working.
+        bg: tokens("bg", ["base", "panel", "panelDeep", "deep", "grad1", "grad2"]),
+        ac: "var(--ac)", // the live accent, set per theme and accent
         // The live accent at any alpha: `border-hud/[.13]` is
         // color-mix(var(--ac) 13%, transparent), so it follows runtime --ac.
         hud: "color-mix(in srgb, var(--ac) calc(<alpha-value> * 100%), transparent)",
-        ink: {
-          base: "#bcccd0",
-          bright: "#eaf6f8",
-          light: "#dceef1",
-          dim: "#8aa0a6",
-          mid: "#9fb0b5",
-          dimmer: "#5a6e72",
-          darkest: "#46585e",
-          deepest: "#3a4a50",
-          label: "#7f9298", // status strip labels
-          faint: "#6f8589", // directories, empty states
-          void: "#04080b", // text on an accent fill
-          agentVoid: "#0c0612", // text on an agent fill
-        },
-        sig: {
-          warn: "#ffb000",
-          danger: "#ff5a3c",
-          ok: "#7fd49a",
-          okDark: "#3a8f4e",
-          add: "#7fd49a",
-          delete: "#d98a7d",
-          violet: "#c08bff",
-          agent: "#c08bff", // everything that comes from Claude
-          warnInk: "#f3e2c0", // body text inside a flag
-          deleteHi: "#ff7a5e", // D status chip
-          dangerInk: "#ff9a86", // discard button
-          dangerDark: "#b54a3a",
-        },
+        ink: tokens("ink", [
+          "base", "bright", "light", "dim", "mid", "dimmer", "darkest", "deepest",
+          "label", // status strip labels
+          "faint", // directories, empty states
+          "void", // text on an accent fill
+          "agentVoid", // text on an agent fill
+        ]),
+        sig: tokens("sig", [
+          "warn", "danger", "ok", "okDark", "add", "delete", "violet",
+          "agent", // everything that comes from Claude
+          "warnInk", // body text inside a flag
+          "deleteHi", // D status chip
+          "dangerInk", // discard button
+          "dangerDark",
+        ]),
       },
       fontFamily: {
         chrome: ["Saira", "system-ui", "sans-serif"],

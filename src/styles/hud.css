@@ -6,14 +6,14 @@
 @import "@fontsource/saira/500.css";
 @import "@fontsource/saira/600.css";
 @import "@fontsource/saira/700.css";
+@import "./themes.css";
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --ac: #3df0ff;
-  color-scheme: dark;
+  --ac: var(--ac-cyan);
 }
 
 * {
@@ -25,8 +25,8 @@ body,
 #root {
   height: 100%;
   margin: 0;
-  background: #06090c;
-  color: #bcccd0;
+  background: rgb(var(--bg-base));
+  color: rgb(var(--ink-base));
   font-family: "JetBrains Mono", ui-monospace, monospace;
   overflow: hidden;
 }
@@ -52,11 +52,11 @@ body,
   inset: 0;
   background: radial-gradient(
     130% 110% at 50% -15%,
-    #0d161d 0%,
-    #080f14 55%,
-    #05080b 100%
+    rgb(var(--bg-grad1)) 0%,
+    rgb(var(--bg-grad2)) 55%,
+    rgb(var(--bg-deep)) 100%
   );
-  animation: flick 8s infinite;
+  animation: var(--fx-flick);
 }
 
 /* Scanlines overlay */
@@ -68,7 +68,7 @@ body,
   background: repeating-linear-gradient(
     to bottom,
     transparent 0 2px,
-    rgba(0, 0, 0, 0.16) 2px 3px
+    var(--fx-scan) 2px 3px
   );
   mix-blend-mode: multiply;
   animation: scan 1.1s steps(3) infinite;
@@ -84,7 +84,7 @@ body,
   z-index: 61;
   background: linear-gradient(
     transparent,
-    color-mix(in srgb, var(--ac) 5%, transparent),
+    color-mix(in srgb, var(--ac) var(--fx-sweep), transparent),
     transparent
   );
   animation: sweep 7s linear infinite;
@@ -96,7 +96,7 @@ body,
   inset: 0;
   pointer-events: none;
   z-index: 59;
-  box-shadow: inset 0 0 220px rgba(0, 0, 0, 0.72);
+  box-shadow: var(--fx-vignette);
 }
 
 /* Outer corner brackets on a focused panel */
@@ -154,10 +154,10 @@ body,
   font-size: 12px;
   line-height: 1.92;
 }
-.dc-diff-add { background: color-mix(in srgb, #3a8f4e 16%, transparent); color: #7fd49a; }
-.dc-diff-del { background: color-mix(in srgb, #b54a3a 16%, transparent); color: #d98a7d; }
-.dc-diff-ctx { color: #8aa0a6; }
-.dc-diff-hunk { color: #46585e; }
+.dc-diff-add { background: rgb(var(--sig-ok-dark) / var(--diff-bg)); color: rgb(var(--sig-add)); }
+.dc-diff-del { background: rgb(var(--sig-danger-dark) / var(--diff-bg)); color: rgb(var(--sig-delete)); }
+.dc-diff-ctx { color: rgb(var(--ink-dim)); }
+.dc-diff-hunk { color: rgb(var(--ink-darkest)); }
 .dc-diff-line.selected {
   outline: 1px solid var(--ac);
   outline-offset: -1px;
@@ -176,65 +176,35 @@ input, textarea {
 
 /* A diff line reached from a flag: brief amber outline */
 .dc-flash {
-  outline: 1px solid #ffb000;
+  outline: 1px solid rgb(var(--sig-warn));
   outline-offset: -1px;
-  background: color-mix(in srgb, #ffb000 14%, transparent);
+  background: rgb(var(--sig-warn) / 0.14);
 }
 
-/* Accent tweak (SPEC §2): set on <html data-accent="…"> from settings */
-:root[data-accent="green"] { --ac: #39ff7d; }
-:root[data-accent="amber"] { --ac: #ffb000; }
-:root[data-accent="red"] { --ac: #ff5a3c; }
+/* Accent tweak (SPEC §2): set on <html data-accent="…"> from settings.
+   Each theme defines its own four accents (themes.css). */
+:root[data-accent="green"] { --ac: var(--ac-green); }
+:root[data-accent="amber"] { --ac: var(--ac-amber); }
+:root[data-accent="red"] { --ac: var(--ac-red); }
 
 /* Scanlines tweak: <html data-scanlines="off"> */
 :root[data-scanlines="off"] .dc-scanlines,
 :root[data-scanlines="off"] .dc-sweep { display: none; }
 
-/* Syntax colours inside diff lines (shiki css-variables theme). Muted, so
-   the add/del backgrounds stay the loudest signal; plain text keeps the
-   line's own add/del/context colour. */
-.dc-diff-add { --shiki-foreground: #7fd49a; }
-.dc-diff-del { --shiki-foreground: #d98a7d; }
-.dc-diff-ctx { --shiki-foreground: #8aa0a6; }
-.dc-syntax {
-  --shiki-token-keyword: #6fc3d6;
-  --shiki-token-constant: #e0a372;
-  --shiki-token-string: #d9c27a;
-  --shiki-token-string-expression: #d9c27a;
-  --shiki-token-function: #9fd0ff;
-  --shiki-token-parameter: #dceef1;
-  --shiki-token-punctuation: #8aa0a6;
-  --shiki-token-comment: #5a6e72;
-  --shiki-token-link: #6fc3d6;
-  --shiki-token-inserted: #7fd49a;
-  --shiki-token-deleted: #d98a7d;
-  --shiki-token-changed: #ffb000;
-}
+/* Syntax colours inside diff lines (shiki css-variables theme; the
+   --shiki-token-* colours are per theme in themes.css). Muted, so the
+   add/del backgrounds stay the loudest signal; plain text keeps the line's
+   own add/del/context colour. */
+.dc-diff-add { --shiki-foreground: rgb(var(--sig-add)); }
+.dc-diff-del { --shiki-foreground: rgb(var(--sig-delete)); }
+.dc-diff-ctx { --shiki-foreground: rgb(var(--ink-dim)); }
 .dc-diff-del.dc-syntax { filter: saturate(0.7); }
 
 /* Console (M11): xterm.js reads these at runtime. The ANSI colours are
-   the HUD palette; the cursor and selection follow the accent. */
+   per theme (themes.css); the cursor and selection follow the accent. */
 :root {
-  --term-bg: #05080b;
-  --term-fg: #bcccd0;
   --term-cursor: var(--ac);
   --term-selection: color-mix(in srgb, var(--ac) 30%, transparent);
-  --term-black: #0d161d;
-  --term-red: #ff5a3c;
-  --term-green: #7fd49a;
-  --term-yellow: #ffb000;
-  --term-blue: #6fb3ff;
-  --term-magenta: #c08bff;
-  --term-cyan: #3df0ff;
-  --term-white: #bcccd0;
-  --term-bright-black: #5a6e72;
-  --term-bright-red: #ff7a5e;
-  --term-bright-green: #9fe8b4;
-  --term-bright-yellow: #ffc94d;
-  --term-bright-blue: #9fd0ff;
-  --term-bright-magenta: #d9b3ff;
-  --term-bright-cyan: #8ff6ff;
-  --term-bright-white: #eaf6f8;
 }
 .dc-console .xterm { padding: 6px 10px; height: 100%; }
 .dc-console .xterm-viewport { background: transparent !important; }

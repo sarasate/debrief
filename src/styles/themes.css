@@ -1,0 +1,97 @@
+/* Themes (docs/PLAN.md M12). The only file with palette hex.
+
+   `<html data-theme="…">` picks a block; src/lib/theme.ts sets it. The
+   Tailwind tokens read the `--bg-*`, `--ink-*` and `--sig-*` variables as
+   RGB channels ("6 9 12"), so alpha modifiers like `border-sig-warn/45` keep
+   working. Token names describe contrast, not lightness: in a light theme
+   `ink.darkest` is the faintest ink and `bg.deep` the most recessed surface.
+
+   Each theme also sets:
+   - `--ac-cyan` … `--ac-red`: its four accents; `data-accent` picks one.
+   - `--diff-bg`: alpha of the add / delete line backgrounds.
+   - `--fx-*`: the HUD effects (scanlines, vignette, sweep, flicker).
+   - `--shiki-token-*`: syntax colours inside diff lines.
+   - `--term-*`: the console's ANSI palette (xterm.js reads these as-is). */
+
+/* DEADBOLT: the design's own palette, and the default. */
+:root,
+:root[data-theme="deadbolt"] {
+  color-scheme: dark;
+
+  --bg-base: 6 9 12; /* #06090c */
+  --bg-panel: 8 13 16; /* #080d10 */
+  --bg-panel-deep: 7 11 14; /* #070b0e */
+  --bg-deep: 5 8 11; /* #05080b */
+  --bg-grad1: 13 22 29; /* #0d161d */
+  --bg-grad2: 8 15 20; /* #080f14 */
+
+  --ink-base: 188 204 208; /* #bcccd0 */
+  --ink-bright: 234 246 248; /* #eaf6f8 */
+  --ink-light: 220 238 241; /* #dceef1 */
+  --ink-dim: 138 160 166; /* #8aa0a6 */
+  --ink-mid: 159 176 181; /* #9fb0b5 */
+  --ink-dimmer: 90 110 114; /* #5a6e72 */
+  --ink-darkest: 70 88 94; /* #46585e */
+  --ink-deepest: 58 74 80; /* #3a4a50 */
+  --ink-label: 127 146 152; /* #7f9298 */
+  --ink-faint: 111 133 137; /* #6f8589 */
+  --ink-void: 4 8 11; /* #04080b */
+  --ink-agent-void: 12 6 18; /* #0c0612 */
+
+  --sig-warn: 255 176 0; /* #ffb000 */
+  --sig-danger: 255 90 60; /* #ff5a3c */
+  --sig-ok: 127 212 154; /* #7fd49a */
+  --sig-ok-dark: 58 143 78; /* #3a8f4e */
+  --sig-add: 127 212 154; /* #7fd49a */
+  --sig-delete: 217 138 125; /* #d98a7d */
+  --sig-violet: 192 139 255; /* #c08bff */
+  --sig-agent: 192 139 255; /* #c08bff */
+  --sig-warn-ink: 243 226 192; /* #f3e2c0 */
+  --sig-delete-hi: 255 122 94; /* #ff7a5e */
+  --sig-danger-ink: 255 154 134; /* #ff9a86 */
+  --sig-danger-dark: 181 74 58; /* #b54a3a */
+
+  --ac-cyan: #3df0ff;
+  --ac-green: #39ff7d;
+  --ac-amber: #ffb000;
+  --ac-red: #ff5a3c;
+
+  --diff-bg: 0.16;
+
+  --fx-scan: rgba(0, 0, 0, 0.16);
+  --fx-vignette: inset 0 0 220px rgba(0, 0, 0, 0.72);
+  --fx-sweep: 5%;
+  --fx-flick: flick 8s infinite;
+
+  --shiki-token-keyword: #6fc3d6;
+  --shiki-token-constant: #e0a372;
+  --shiki-token-string: #d9c27a;
+  --shiki-token-string-expression: #d9c27a;
+  --shiki-token-function: #9fd0ff;
+  --shiki-token-parameter: #dceef1;
+  --shiki-token-punctuation: #8aa0a6;
+  --shiki-token-comment: #5a6e72;
+  --shiki-token-link: #6fc3d6;
+  --shiki-token-inserted: #7fd49a;
+  --shiki-token-deleted: #d98a7d;
+  --shiki-token-changed: #ffb000;
+
+  --term-bg: #05080b;
+  --term-fg: #bcccd0;
+  --term-black: #0d161d;
+  --term-red: #ff5a3c;
+  --term-green: #7fd49a;
+  --term-yellow: #ffb000;
+  --term-blue: #6fb3ff;
+  --term-magenta: #c08bff;
+  --term-cyan: #3df0ff;
+  --term-white: #bcccd0;
+  --term-bright-black: #5a6e72;
+  --term-bright-red: #ff7a5e;
+  --term-bright-green: #9fe8b4;
+  --term-bright-yellow: #ffc94d;
+  --term-bright-blue: #9fd0ff;
+  --term-bright-magenta: #d9b3ff;
+  --term-bright-cyan: #8ff6ff;
+  --term-bright-white: #eaf6f8;
+}
