@@ -273,6 +273,63 @@ A read-only log of the active branch, so the reviewer can see what the branch al
 ### M13 — Branch history
 Tests: unborn repo (empty log), order and paging, merge-base marking and no base on the trunk, a branch target that isn't checked out, first-parent over a merge, Claude trailer and ref labels, a commit's files (added, modified, deleted), sha-only arguments, `file_lines` at a commit. By hand: `H`, the divider on a feature branch, ⏎ / Esc keeping the review's scroll, `o` inside a commit, paging on a long history.
 
+---
+
+## Workspace root (M14)
+
+Claude sessions often run in several repos side by side under one folder (`~/Workspace/Personal/*`). Today switching means `⌘O` and a trip through the Finder dialog each time. M14 lets `⌘O` open a **root folder** as well as a repo. Debrief then knows every repo under it, and a picker in the style of the command palette switches between them in a few keys.
+
+### Design
+
+**Opening a root with `⌘O`.** The same dialog. The chosen folder is sorted like this:
+1. It is a repo's workdir root: open that repo, as today. The workspace root (if any) stays set.
+2. Otherwise scan it for repos (below). One or more found: it becomes the **workspace root**. The picker opens at once, and the current repo stays open until one is picked.
+3. None found, but it is inside a repo (a subfolder): open that repo, as today (`Repository::discover`).
+4. Neither: toast `no git repositories under <folder>`, and nothing changes.
+
+**Scan.** Read-only, no git commands, nothing written.
+- Walk at most **3 levels** below the root. Don't follow symlinks. Skip hidden folders (this also skips `.claude/worktrees/*`, which the session code already maps to their repo), `node_modules`, `target`, `vendor`, `dist` and `build`.
+- A folder with a `.git` dir or a `.git` file (a linked worktree, tagged `WORKTREE`) is a repo. Don't descend into it, so submodules and nested repos aren't listed. Bare repos are skipped.
+- At most 500 repos. Past that the list says it was cut short.
+- The root itself can't be a repo (case 1 would have opened it).
+
+**Picker.** A new palette mode, `projects`, in `CommandPalette.tsx`: the same modal, input, `↑/↓/⏎/Esc` and filter, with glyph `▤` and the label `WORKSPACE · <root name>`.
+- **Rows:** repo name, then the path relative to the root, branch (`HEAD` when detached), `n changed` (or `clean`), the age of the newest Claude session for that repo, and a violet `CLAUDE` tag when that session is newer than the repo's last commit (it probably left changes to review). Marks: `ACTIVE` for the open repo, `WORKTREE`.
+- **Order:** repos with a Claude session, newest session first, then the rest alphabetically. The active repo keeps its place; the cursor starts on the first row that isn't active, so `P ⏎` jumps to the most recent other repo.
+- **Filter:** matches the name and the relative path.
+- **Two-stage load, so the modal opens instantly:** `workspace_scan()` returns names and paths (cached until the root changes or `R` is pressed). `workspace_status(paths)` then fills in branch, changed count and session age per repo, on a small thread pool. Rows show `…` until they are ready. Status uses git2 `statuses` with untracked files included but `recurse_untracked_dirs(false)` and ignored files excluded, so a big repo doesn't stall the list. Session age comes from the mtimes of the transcript dirs (the same slug rules as SPEC §3.1). No transcript is parsed.
+- **⏎** switches repo through the same path `⌘O` uses today: `repo_open`, which closes the console, then the UI reset in `openRepo.ts`. That code moves into a shared `switchRepo(qc, path)` used by both.
+
+**Keys.**
+- **`P`** opens the picker from the review (not from inside the console, where keys go to the shell). `:project` in the palette does the same. With no root set it says `no workspace root · ⌘O a folder of repos`.
+- **`:workspace-clear`** forgets the root. The open repo stays open.
+- Both go into `BINDINGS` (group GLOBAL), so the help overlay and the palette list them. The command bar gets a `P project` hint only while a root is set.
+
+**Status strip.** While a root is set, REPO shows `<root name> / <repo>` (the root part in `ink.dim`). Clicking it opens the picker.
+
+**Persistence.** `Settings.workspace_root: Option<String>`, next to `last_repo`, in the app config dir as before. At startup, a root with no `last_repo` (or a `last_repo` that has gone) opens the picker in place of the empty state. A root that no longer exists is dropped with a toast.
+
+**Commands.**
+```
+repo_open(path) -> OpenResult          // { kind: "repo", info } | { kind: "root", root, repos }
+workspace_scan() -> WorkspaceRepo[]    // { name, path, rel, worktree }
+workspace_status(paths) -> RepoPeek[]  // { path, branch, changed, lastSession }
+workspace_clear()
+```
+`workspace_status` only accepts paths the last scan returned, so the frontend can't point it at arbitrary folders.
+
+### Decisions (settled 2026-09-30)
+
+1. **`P` opens the picker.** It doesn't need to work from inside the console.
+2. **`⌘O` sorts the folder itself** (repo, root, or subfolder of a repo) rather than asking in a separate `:open-root` command.
+3. **One root at a time.** Several roots, or a "recent repos" list across roots, is later.
+4. **Scan depth 3**, fixed. A setting only if it turns out to be too shallow.
+
+### M14 — Workspace root
+Tests: `⌘O` classification (repo root, folder of repos, subfolder of a repo, empty folder); scan depth limit, skipped folders, no descent into a repo, a `.git` file worktree, a bare repo skipped, a symlink loop, the 500 cap; `workspace_status` on a dirty repo, a clean repo, a detached HEAD and an unborn repo, and refusing a path outside the last scan; old settings files still load with no root. By hand: `⌘O` on `~/Workspace/Personal`, `P ⏎` bouncing between two repos with the console closed each time, the `CLAUDE` tag after a session, startup with the root set and the last repo deleted.
+
+Done when: I can `⌘O` my workspace folder once, and from then on `P`, a few letters and `⏎` puts any repo under it into review, with the repos Claude last worked in at the top.
+
 ### Later (v2)
 - Claude-clustered intents (SPEC §3.3 v2), cached per diff hash.
 - A PostToolUse hook installer that writes `.git/debrief/ledger.jsonl` live, as a more robust alternative to transcript parsing.
