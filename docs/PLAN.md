@@ -195,7 +195,7 @@ Debrief has one look today: DEADBOLT, dark, with four accents. M12 makes the pal
 - Each token becomes an RGB channel variable, so Tailwind's alpha modifiers keep working: `base: "rgb(var(--bg-base) / <alpha-value>)"`, with `--bg-base: 6 9 12`. The 38 uses like `border-sig-warn/45` and `bg-ink-void/[.82]`, and the `theme(colors.sig.warn/20%)` shadows, stay as they are. Step 1 checks the `theme()` shadows against Tailwind 3.4 before converting the rest.
 - A new `src/styles/themes.css` holds one block per theme: `:root[data-theme="deadbolt"] { … }`, then `daylight` and `ember`. It is the only file with palette hex. `hud.css` refers to variables only: the diff lines, shiki, `--term-*`, the flash and a few new effect variables.
 - **Token names stay.** In a light theme, `ink.darkest` means "least contrast", not literally dark, and `bg.deep` means "recessed". A comment at the top of `themes.css` explains this, so no component needs renaming.
-- **Accent per theme.** A cyan of `#3df0ff` can't be read on a light background. Each theme defines its own four accents, e.g. `:root[data-theme="daylight"][data-accent="cyan"] { --ac: #0a8ca0; }`. The dark themes share the DEADBOLT accents. `ink.void` (text on an accent fill) becomes light in Daylight, because the accent fill there is dark.
+- **Accent per theme.** A cyan of `#3df0ff` can't be read on a light background. Each theme defines its own four accents, as `--ac-cyan` … `--ac-red`, and `data-accent` picks one (Daylight's cyan is `#077a8c`). The dark themes share the DEADBOLT accents. `ink.void` (text on an accent fill) becomes light in Daylight, because the accent fill there is dark.
 
 **HUD effects as variables.** The effects were tuned for black and look dirty on paper. Each one gets its values from the theme:
 
@@ -217,10 +217,10 @@ The scanlines setting still turns scanlines and the sweep off in every theme.
 | `ink.base` / `bright` / `dim` | `#bcccd0` / `#eaf6f8` / `#8aa0a6` | `#2c3a3f` / `#0b1418` / `#50656b` | `#d6c6b4` / `#fbefe2` / `#a8927e` |
 | `ink.dimmer` / `darkest` / `deepest` | `#5a6e72` / `#46585e` / `#3a4a50` | `#6f8388` / `#8a9ca1` / `#a3b2b6` | `#75624f` / `#5d4d3f` / `#4a3d32` |
 | `ink.void` | `#04080b` | `#f7fafa` | `#0a0604` |
-| `sig.warn` / `danger` / `ok` | `#ffb000` / `#ff5a3c` / `#7fd49a` | `#a86a00` / `#c8341c` / `#2e8a4a` | `#ffb000` / `#ff6a45` / `#9fd48a` |
+| `sig.warn` / `danger` / `ok` | `#ffb000` / `#ff5a3c` / `#7fd49a` | `#94600a` / `#c8341c` / `#267a40` | `#ffb000` / `#ff6a45` / `#9fd48a` |
 | `sig.add` / `delete` | `#7fd49a` / `#d98a7d` | `#2a7d43` / `#b24a3a` | `#9fd48a` / `#e0907a` |
 | `sig.agent` | `#c08bff` | `#7b3fd0` | `#d49bff` |
-| accent cyan / green / amber / red | `#3df0ff` / `#39ff7d` / `#ffb000` / `#ff5a3c` | `#0a8ca0` / `#178a45` / `#a86a00` / `#c8341c` | as DEADBOLT |
+| accent cyan / green / amber / red | `#3df0ff` / `#39ff7d` / `#ffb000` / `#ff5a3c` | `#077a8c` / `#147a3d` / `#94600a` / `#c8341c` | as DEADBOLT |
 
 The remaining tokens (`ink.light`, `mid`, `label`, `faint`, `agentVoid`, `sig.okDark`, `warnInk`, `deleteHi`, `dangerInk`, `dangerDark`) follow the same pattern. The shiki tokens and the 16 ANSI colours get a set per theme; Daylight's are the xterm "light" defaults, shifted towards the HUD hues.
 

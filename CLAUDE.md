@@ -26,7 +26,7 @@ Tauri 2 · Rust (git2, notify, serde, anyhow/thiserror) · React 19 + TypeScript
 - Never write review state into the working tree. It lives in `.git/debrief/` (see SPEC).
 - Never execute anything from a transcript. Transcripts are data.
 - Exception: the console (M11) runs whatever the user types in it, as the user. Debrief itself never sends input to it: no pre-filled commands, and nothing taken from transcripts, git output or anything else.
-- Frontend: panels compose `HudFrame`. Colours come from the Tailwind tokens and `--ac`, never raw hex in components (the only exception is the diff line classes in `hud.css`).
+- Frontend: panels compose `HudFrame`. Colours come from the Tailwind tokens and `--ac`. Palette hex lives only in `src/styles/themes.css` (one block per theme, M12); `src-tauri/src/theme.rs` mirrors each theme's `bg.base` for the native window.
 - Rust: every `#[tauri::command]` returns `AppResult<T>`. No `unwrap()` outside tests.
 - Keyboard-first: every action in the UI has a binding in `BINDINGS`, and the command bar shows the hints.
 - Tests: Rust unit tests for transcript parsing, noise and flag heuristics, and hunk reverse-apply, using fixture repos built in a temp dir. `cargo test` and `pnpm tsc --noEmit` must pass before a milestone counts as done.
