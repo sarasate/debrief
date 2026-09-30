@@ -1,6 +1,6 @@
-export type PanelId = "changeset" | "diff" | "notes" | "console";
+export type PanelId = "changeset" | "history" | "diff" | "notes" | "console";
 
-export type HelpGroup = "NAVIGATION" | "REVIEW" | "NOTES" | "DIFF" | "FILTER" | "SESSION" | "CONSOLE" | "LOOK" | "GLOBAL";
+export type HelpGroup = "NAVIGATION" | "REVIEW" | "NOTES" | "DIFF" | "HISTORY" | "FILTER" | "SESSION" | "CONSOLE" | "LOOK" | "GLOBAL";
 
 export interface Binding {
   /** KeyboardEvent.key, or "ctrl+x"; "" for palette-only commands. */
@@ -71,8 +71,18 @@ export const BINDINGS: Binding[] = [
   { key: "o", panel: "global", action: "file.full", desc: "Whole file / changes only", group: "DIFF", hint: { keys: "o", label: "full" }, cmd: "full" },
   { key: "e", panel: "global", action: "hunk.expand", desc: "Expand / collapse a large hunk", group: "DIFF" },
 
+  // Branch history (M13)
+  { key: "H", panel: "global", action: "history.toggle", desc: "Branch history / changeset", group: "HISTORY", hint: { keys: "H", label: "log" }, cmd: "history" },
+  { key: "j", panel: "history", action: "log.next", desc: "Next commit", group: "HISTORY" },
+  { key: "k", panel: "history", action: "log.prev", desc: "Previous commit", group: "HISTORY" },
+  { key: "ArrowDown", panel: "history", action: "log.next", desc: "Next commit", group: "HISTORY" },
+  { key: "ArrowUp", panel: "history", action: "log.prev", desc: "Previous commit", group: "HISTORY" },
+  { key: "g", panel: "history", action: "log.first", desc: "Newest (current review)", group: "HISTORY" },
+  { key: "G", panel: "history", action: "log.last", desc: "Oldest loaded commit", group: "HISTORY" },
+  { key: "Enter", panel: "history", action: "log.open", desc: "Show commit (on current review: back)", group: "HISTORY" },
+
   // Filters
-  { key: "/", panel: "global", action: "filter.query", desc: "Filter by path", group: "FILTER" },
+  { key: "/", panel: "global", action: "filter.query", desc: "Filter by path (log: subject, author, sha)", group: "FILTER" },
   { key: "1", panel: "global", action: "filter.all", desc: "Show all files", group: "FILTER", cmd: "all" },
   { key: "2", panel: "global", action: "filter.open", desc: "Show open files", group: "FILTER", cmd: "open-files" },
   { key: "3", panel: "global", action: "filter.flagged", desc: "Show flagged files", group: "FILTER", cmd: "flagged" },
@@ -130,6 +140,6 @@ export function keyLabel(key: string): string {
   if (key === "Escape") return "esc";
   if (key.startsWith("ctrl+")) return "^" + key.slice(5);
   return (
-    { ArrowDown: "↓", ArrowUp: "↑", ArrowLeft: "←", ArrowRight: "→", Tab: "tab" } as Record<string, string>
+    { ArrowDown: "↓", ArrowUp: "↑", ArrowLeft: "←", ArrowRight: "→", Tab: "tab", Enter: "⏎" } as Record<string, string>
   )[key] ?? key;
 }

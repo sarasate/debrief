@@ -1,13 +1,14 @@
 import { useEffect } from "react";
-import { useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useQueryClient, type InfiniteData, type QueryClient } from "@tanstack/react-query";
 import { useUI } from "../store/ui";
-import { findBinding } from "../lib/keymap";
+import { findBinding, keyLabel } from "../lib/keymap";
 import { buildChangeset, isOpen, splitPath } from "../lib/changeset";
 import { errText } from "../lib/invoke";
 import { openRepoDialog } from "../lib/openRepo";
-import { pageLines, reveal, scrollPanelByLines, scrollPanelTo } from "../lib/scroll";
-import { QK, diffKey, reviewKey } from "./useRepo";
-import type { Accent, DarkTheme, FileDiff, ReviewModel, Settings, ThemeMode, Verdict } from "../lib/types";
+import { pageLines, rememberScroll, reveal, scrollPanelByLines, scrollPanelTo } from "../lib/scroll";
+import { QK, diffKey, logKey, reviewKey } from "./useRepo";
+import type { Accent, BranchLog, CommitDetail, DarkTheme, DiffHunk, FileDiff, ReviewModel, Settings, ThemeMode, Verdict } from "../lib/types";
+import { logOrder, visibleLog } from "../lib/history";
 import { committedReverts, currentModel, readOnlyReason, revertTargets, setVerdict, setViewed, stageCleared } from "../lib/review";
 import { focusComposer, removeNote, setTransmitMode, transmit } from "../lib/notes";
 import { api } from "../lib/invoke";
@@ -130,9 +131,48 @@ function selectFile(path: string | null) {
   requestAnimationFrame(() => reveal("changeset", `[data-path="${CSS.escape(path)}"]`));
 }
 
+/** Review actions that make no sense on a past commit. */
+const REVIEW_ONLY = new Set(["file.clear", "file.viewed", "hunk.keep", "hunk.revert", "note.new", "note.newFile", "flag.jump"]);
+
+/** Hunks on screen: the shown commit's, across its files, else the selected file's. */
+function shownHunks(qc: QueryClient): { hunks: DiffHunk[]; cursor: string | null; set: (id: string) => void } {
+  const ui = useUI.getState();
+  if (ui.logSha) {
+    const c = qc.getQueryData<CommitDetail>(QK.commit(ui.logSha));
+    return { hunks: c?.files.flatMap((f) => f.hunks) ?? [], cursor: ui.logHunk, set: ui.setLogHunk };
+  }
+  const diff = qc.getQueryData<FileDiff>(diffKey(ui.selectedPath));
+  return { hunks: diff?.hunks ?? [], cursor: ui.hunkId, set: (id) => ui.setHunk(id) };
+}
+
+function moveLogCursor(sha: string | null) {
+  useUI.getState().setLogCursor(sha);
+  requestAnimationFrame(() => reveal("history", `[data-log="${sha ?? "review"}"]`));
+}
+
+/** Show the commit under the log cursor, or go back to the review. */
+function openLogCursor(qc: QueryClient) {
+  const ui = useUI.getState();
+  const sha = ui.logCursor;
+  if (!sha) {
+    if (ui.logSha) ui.showCommit(null);
+    ui.setOutput("current review");
+    return;
+  }
+  if (!ui.logSha) rememberScroll("diff");
+  ui.showCommit(sha);
+  const e = visibleLog(qc.getQueryData<InfiniteData<BranchLog>>(logKey()), "").find((x) => x.sha === sha);
+  ui.setOutput(`commit ${e?.short ?? sha.slice(0, 7)} · ${keyLabel("Escape")} back to the review`);
+}
+
 /** Run a BINDINGS action. Buttons call this too, so mouse and keys share one path. */
 export async function runAction(action: string, qc: QueryClient) {
   const ui = useUI.getState();
+
+  if (ui.logSha && REVIEW_ONLY.has(action)) {
+    ui.setOutput(`viewing a past commit · ${keyLabel("Escape")} back to the review`);
+    return;
+  }
 
   switch (action) {
     // files
@@ -331,8 +371,8 @@ export async function runAction(action: string, qc: QueryClient) {
       return;
     }
     case "hunk.expand": {
-      const diff = qc.getQueryData<FileDiff>(diffKey(ui.selectedPath));
-      const h = diff?.hunks.find((x) => x.id === ui.hunkId);
+      const shown = shownHunks(qc);
+      const h = shown.hunks.find((x) => x.id === shown.cursor);
       if (!h) return;
       if (h.lines.length <= COLLAPSE_LINES) { ui.setOutput("this hunk isn't collapsed"); return; }
       ui.toggleExpanded(h.id);
@@ -341,12 +381,12 @@ export async function runAction(action: string, qc: QueryClient) {
     }
     case "hunk.next":
     case "hunk.prev": {
-      const diff = qc.getQueryData<FileDiff>(diffKey(ui.selectedPath));
-      const ids = diff?.hunks.map((h) => h.id) ?? [];
+      const shown = shownHunks(qc);
+      const ids = shown.hunks.map((h) => h.id);
       if (!ids.length) return;
-      const i = ui.hunkId ? ids.indexOf(ui.hunkId) : -1;
+      const i = shown.cursor ? ids.indexOf(shown.cursor) : -1;
       const n = action === "hunk.next" ? Math.min(i + 1, ids.length - 1) : Math.max(i - 1, 0);
-      ui.setHunk(ids[n]);
+      shown.set(ids[n]);
       reveal("diff", `[data-hunk="${ids[n]}"]`, "start");
       ui.setOutput(`hunk ${n + 1} / ${ids.length}`);
       return;
@@ -354,8 +394,31 @@ export async function runAction(action: string, qc: QueryClient) {
 
     // filters
     case "filter.query":
-      document.querySelector<HTMLInputElement>("[data-filter-input]")?.select();
+      document.querySelector<HTMLInputElement>(ui.leftView === "history" ? "[data-log-filter]" : "[data-filter-input]")?.select();
       return;
+
+    // branch history (M13)
+    case "history.toggle": {
+      const to = ui.leftView === "history" ? "changeset" : "history";
+      ui.setLeftView(to);
+      ui.setOutput(to === "history" ? `branch history · ⏎ shows a commit` : "changeset");
+      return;
+    }
+    case "log.next":
+    case "log.prev":
+    case "log.first":
+    case "log.last": {
+      const order = logOrder(visibleLog(qc.getQueryData<InfiniteData<BranchLog>>(logKey()), ui.logQuery));
+      const i = order.indexOf(ui.logCursor);
+      const n =
+        action === "log.first" ? 0
+        : action === "log.last" ? order.length - 1
+        : action === "log.next" ? Math.min((i === -1 ? 0 : i) + 1, order.length - 1)
+        : Math.max((i === -1 ? 0 : i) - 1, 0);
+      moveLogCursor(order[n]);
+      return;
+    }
+    case "log.open": openLogCursor(qc); return;
     case "filter.all": ui.setFilter("all"); return;
     case "filter.open": ui.setFilter("open"); return;
     case "filter.flagged": ui.setFilter("flagged"); return;
@@ -385,6 +448,10 @@ export async function runAction(action: string, qc: QueryClient) {
       if (ui.palette) ui.openPalette(null);
       else if (ui.transmit && !ui.transmit.running) ui.setTransmit(null);
       else if (ui.helpOpen) ui.toggleHelp();
+      else if (ui.logSha) {
+        ui.showCommit(null);
+        ui.setOutput("back to the review");
+      } else if (ui.leftView === "history") ui.setLeftView("changeset");
       return;
   }
 }

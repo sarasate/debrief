@@ -147,6 +147,8 @@ interface ReviewState {
 | Next / prev hunk | `]` / `[` | |
 | Whole file | `o` | toggles the diff between changes only and the whole file: the unchanged lines between hunks show as context, hunks keep their verdicts; the new side is read from the working tree or the branch tip |
 | Expand large hunk | `e` | hunks over 300 lines start collapsed |
+| Branch history | `H` | the left panel shows the active branch's log instead of the changeset (M13); `H` or Esc switches back |
+| Show commit | `⏎` in the log | the diff panel shows that commit against its first parent, read-only; Esc goes back to the review with its scroll and hunk cursor kept |
 | Toggle viewed | `v` | |
 | Clear & next | `space` | mark viewed, go to the next OPEN file |
 | Keep / revert hunk | `y` / `x` | toggles; pressing it again clears the verdict |
@@ -205,7 +207,9 @@ Implementation notes (M6):
 repo_open(path) -> RepoInfo
 repo_status() -> RepoStatus                      // for the current target
 diff_file(path) -> FileDiff                      // current target, with hunk ids
-file_lines(path) -> string[]                     // new side of a changed file, for the whole-file view
+file_lines(path, sha?) -> string[]               // new side of a changed file, for the whole-file view; with sha, the file in that commit
+branch_log(skip, limit) -> { head, base?, mergeBase?, entries: LogEntry[], more }   // first-parent log of the active branch (M13)
+commit_diff(sha) -> { entry, parent?, files: FileDiff[], omitted }                   // one commit against its first parent
 target_list() -> { base, branches: {name, ahead, behind, checkedOut, updatedAt, subject}[] }
 target_set(worktree | branch{head, base?}) -> Range | null   // merge-base, tip, ahead/behind, includesWorktree
 sessions_list() -> SessionInfo[]                 // for this repo, newest first

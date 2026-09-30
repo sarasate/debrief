@@ -45,3 +45,21 @@ export function reveal(panel: string, selector: string, align: "nearest" | "star
     el.scrollTop += r.bottom - box.bottom + pad;
   }
 }
+
+const saved = new Map<string, number>();
+
+/** Keep a panel's scroll position for `restoreScroll` (leaving the review for a commit). */
+export function rememberScroll(panel: string) {
+  const el = panelScroller(panel);
+  if (el) saved.set(panel, el.scrollTop);
+}
+
+/** Put back a remembered position; false when there was none. */
+export function restoreScroll(panel: string): boolean {
+  const top = saved.get(panel);
+  const el = panelScroller(panel);
+  saved.delete(panel);
+  if (top == null || !el) return false;
+  el.scrollTop = top;
+  return true;
+}

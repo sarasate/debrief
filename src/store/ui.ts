@@ -6,6 +6,7 @@ export type Grouping = "intent" | "commit" | "tree";
 export type FileFilter = "all" | "open" | "flagged";
 export type PaletteMode = "commands" | "sessions" | "targets";
 export type ModalId = "discard" | "quit";
+export type LeftView = "changeset" | "history";
 
 interface UIState {
   focus: PanelId;
@@ -27,6 +28,15 @@ interface UIState {
   expanded: Record<string, boolean>;
   /** Diff shows the whole file, unchanged lines between the hunks included. */
   fullFile: boolean;
+  /** Left panel: the changeset, or the branch log (M13). */
+  leftView: LeftView;
+  /** Log cursor by sha; null is the CURRENT REVIEW row. */
+  logCursor: string | null;
+  /** Commit shown in place of the review diff. */
+  logSha: string | null;
+  /** Hunk cursor inside the shown commit. */
+  logHunk: string | null;
+  logQuery: string;
   noteDraft: string;
   /** "file" after N: the next note ignores the hunk cursor. */
   noteScope: "auto" | "file";
@@ -71,6 +81,12 @@ interface UIState {
   setHunk: (id: string | null, pinned?: boolean) => void;
   toggleExpanded: (id: string, open?: boolean) => void;
   toggleFullFile: () => void;
+  setLeftView: (v: LeftView) => void;
+  setLogCursor: (sha: string | null) => void;
+  /** Show a commit, or null to go back to the review. */
+  showCommit: (sha: string | null) => void;
+  setLogHunk: (id: string | null) => void;
+  setLogQuery: (q: string) => void;
   setNoteDraft: (t: string) => void;
   setNoteScope: (s: "auto" | "file") => void;
   setNotesCursor: (i: number) => void;
@@ -102,6 +118,11 @@ export const useUI = create<UIState>((set, get) => ({
   hunkPinned: false,
   expanded: {},
   fullFile: false,
+  leftView: "changeset",
+  logCursor: null,
+  logSha: null,
+  logHunk: null,
+  logQuery: "",
   noteDraft: "",
   noteScope: "auto",
   notesCursor: 0,
@@ -122,7 +143,8 @@ export const useUI = create<UIState>((set, get) => ({
   setFocus: (p) => set({ focus: p }),
   cyclePanel: (dir) => {
     // The console joins the cycle while it's showing.
-    const order: PanelId[] = get().consoleOpen ? [...PANEL_ORDER, "console"] : PANEL_ORDER;
+    const left: PanelId[] = PANEL_ORDER.map((p) => (p === "changeset" && get().leftView === "history" ? "history" : p));
+    const order: PanelId[] = get().consoleOpen ? [...left, "console"] : left;
     const i = order.indexOf(get().focus);
     const n = ((i === -1 ? 0 : i) + dir + order.length) % order.length;
     set({ focus: order[n] });
@@ -151,6 +173,16 @@ export const useUI = create<UIState>((set, get) => ({
   setHunk: (id, pinned = true) => set({ hunkId: id, hunkPinned: pinned && id != null }),
   toggleExpanded: (id, open) => set((s) => ({ expanded: { ...s.expanded, [id]: open ?? !s.expanded[id] } })),
   toggleFullFile: () => set((s) => ({ fullFile: !s.fullFile })),
+  setLeftView: (v) =>
+    set((s) => ({
+      leftView: v,
+      focus: v === "history" ? "history" : s.focus === "history" ? "changeset" : s.focus,
+      ...(v === "changeset" ? { logSha: null, logHunk: null } : {}),
+    })),
+  setLogCursor: (sha) => set({ logCursor: sha }),
+  showCommit: (sha) => set((s) => (s.logSha === sha ? {} : { logSha: sha, logHunk: null })),
+  setLogHunk: (id) => set({ logHunk: id }),
+  setLogQuery: (q) => set({ logQuery: q }),
   setNoteDraft: (t) => set({ noteDraft: t }),
   setNoteScope: (s) => set({ noteScope: s }),
   setNotesCursor: (i) => set({ notesCursor: i }),

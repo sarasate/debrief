@@ -257,6 +257,22 @@ Done when: with macOS in light mode Debrief opens in Daylight with no dark flash
 
 ---
 
+## Branch history (M13)
+
+A read-only log of the active branch, so the reviewer can see what the branch already holds before the changes under review.
+
+### Design
+- **Which log.** The branch under review in a branch review, else the checked-out branch (HEAD, "HEAD" when detached). First-parent only (`git log --first-parent`), newest first, 200 commits a page, more as the list scrolls or the cursor nears the end. The watcher refreshes it like everything under `repo`.
+- **Where.** `H` swaps the left panel between the changeset and **HISTORY**; `h`/`l` focus cycling treats it as the left panel. Nothing is written, and it adds no action that changes the working tree.
+- **Rows.** A pinned **CURRENT REVIEW** row on top (⏎ on it returns to the review), then per commit: short sha (violet for a Claude co-authored commit), subject, author, age, a `CLAUDE` and a `MERGE` tag, files and `+/−` against the first parent, and the branches, remote branches and tags pointing at it (`origin/HEAD` left out).
+- **Merge-base.** The base is the review's, else the detected one (§3 review target) unless that is the branch itself (`main` against `main` or `origin/main`). Commits above the merge-base are the branch's own; a `LEFT <BASE> HERE` divider sits above the first one below it. No base: no divider.
+- **Commit view.** ⏎ (or a click) shows the commit in the diff panel: sha, author, date, first parent, refs, subject and body, then every changed file (at most 200; the rest are counted) under a sticky path header, with the usual hunks minus keep/revert. `]`/`[` step through the commit's hunks across files, `e` expands a large one, `o` shows each file whole as it is in that commit. Review actions (`space`, `v`, `y`, `x`, `n`, `N`, `!`) say they don't apply. Esc returns to the review with its scroll and hunk cursor as they were.
+- **Filter.** `/` in the log filters the loaded commits by subject, author or sha prefix.
+- **Commands.** `branch_log(skip, limit)`, `commit_diff(sha)`; `file_lines` takes an optional `sha`. A sha argument must be hex (4+ chars), so no ref or range syntax reaches revparse.
+
+### M13 — Branch history
+Tests: unborn repo (empty log), order and paging, merge-base marking and no base on the trunk, a branch target that isn't checked out, first-parent over a merge, Claude trailer and ref labels, a commit's files (added, modified, deleted), sha-only arguments, `file_lines` at a commit. By hand: `H`, the divider on a feature branch, ⏎ / Esc keeping the review's scroll, `o` inside a commit, paging on a long history.
+
 ### Later (v2)
 - Claude-clustered intents (SPEC §3.3 v2), cached per diff hash.
 - A PostToolUse hook installer that writes `.git/debrief/ledger.jsonl` live, as a more robust alternative to transcript parsing.

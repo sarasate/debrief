@@ -32,7 +32,7 @@ pub(crate) fn review_diff<'r>(repo: &'r Repository, range: Option<&Range>) -> Ap
 
 /// `old` against `new`, or against the working tree (index included) when
 /// `new` is None. Same options everywhere, so hunk ids agree.
-fn diff_from<'r>(repo: &'r Repository, old: Option<&git2::Tree>, new: Option<&git2::Tree>) -> AppResult<Diff<'r>> {
+pub(crate) fn diff_from<'r>(repo: &'r Repository, old: Option<&git2::Tree>, new: Option<&git2::Tree>) -> AppResult<Diff<'r>> {
     let mut opts = DiffOptions::new();
     opts.include_untracked(true)
         .recurse_untracked_dirs(true)
@@ -124,13 +124,27 @@ pub fn file_lines(state: &RepoState, path: &str) -> AppResult<Vec<String>> {
             std::fs::read(workdir.join(path))?
         }
     };
+    text_lines(path, &bytes)
+}
+
+/// A file as it is in commit `sha`, for the whole-file view of a past
+/// commit (M13). A path the commit deleted has no lines.
+pub fn file_lines_at(state: &RepoState, sha: &str, path: &str) -> AppResult<Vec<String>> {
+    let repo = state.open()?;
+    let tree = super::log::find(&repo, sha)?.tree()?;
+    let Ok(entry) = tree.get_path(std::path::Path::new(path)) else { return Ok(vec![]) };
+    let blob = repo.find_blob(entry.id())?;
+    text_lines(path, blob.content())
+}
+
+fn text_lines(path: &str, bytes: &[u8]) -> AppResult<Vec<String>> {
     if bytes.len() > FULL_FILE_MAX_BYTES {
         return Err(AppError::Input(format!("{path} is over {} MB, too large to show whole", FULL_FILE_MAX_BYTES >> 20)));
     }
     if bytes.contains(&0) {
         return Err(AppError::Input(format!("{path} is binary")));
     }
-    let text = String::from_utf8_lossy(&bytes);
+    let text = String::from_utf8_lossy(bytes);
     Ok(text.lines().map(|l| l.trim_end_matches('\r').to_string()).collect())
 }
 
@@ -139,7 +153,7 @@ pub(crate) fn hunk_ids(patch: &Patch, path: &str) -> AppResult<Vec<String>> {
     Ok(collect_hunks(patch, path)?.into_iter().map(|h| h.id).collect())
 }
 
-fn collect_hunks(patch: &Patch, path: &str) -> AppResult<Vec<DiffHunk>> {
+pub(crate) fn collect_hunks(patch: &Patch, path: &str) -> AppResult<Vec<DiffHunk>> {
     Ok(walk_hunks(patch, path)?.into_iter().map(|(h, _)| h).collect())
 }
 
@@ -388,6 +402,17 @@ mod tests {
         assert!(file_lines(&fx.state(), "gone.txt").unwrap().is_empty());
         assert!(file_lines(&fx.state(), "clean.txt").is_err(), "only paths in the diff");
         assert!(file_lines(&fx.state(), "../a.txt").is_err());
+    }
+
+    #[test]
+    fn file_lines_at_reads_a_past_commit() {
+        let fx = Fixture::new();
+        fx.commit(&[("a.txt", "old\n")]);
+        let first = fx.repo.head().unwrap().peel_to_commit().unwrap().id().to_string();
+        fx.commit(&[("a.txt", "new\n")]);
+        assert_eq!(file_lines_at(&fx.state(), &first, "a.txt").unwrap(), ["old"]);
+        assert!(file_lines_at(&fx.state(), &first, "missing.txt").unwrap().is_empty());
+        assert!(file_lines_at(&fx.state(), "HEAD", "a.txt").is_err(), "shas only");
     }
 
     #[test]

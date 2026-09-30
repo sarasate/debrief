@@ -14,7 +14,7 @@ use std::sync::LazyLock;
 /// Commits read per branch; a longer branch shows its newest this many.
 const MAX_COMMITS: usize = 500;
 
-static CLAUDE_TRAILER: LazyLock<Regex> =
+pub(crate) static CLAUDE_TRAILER: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?im)^co-authored-by:.*(claude|@anthropic\.com)").expect("static regex"));
 static TRAILER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z][A-Za-z-]*: ").expect("static regex"));
 
@@ -114,7 +114,7 @@ pub fn revert_requests(repo: &Repository, range: &Range, ids: &HashSet<String>) 
 
 /// Everything after the subject line, minus a trailing block of
 /// `Key: value` trailers.
-fn body_without_trailers(message: &str) -> String {
+pub(crate) fn body_without_trailers(message: &str) -> String {
     let mut lines: Vec<&str> = message.lines().skip(1).collect();
     while lines.last().is_some_and(|l| l.trim().is_empty() || TRAILER.is_match(l.trim())) {
         lines.pop();

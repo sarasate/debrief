@@ -65,6 +65,47 @@ export interface FileDiff {
   hunks: DiffHunk[];
 }
 
+// Branch history (M13)
+
+export interface RefLabel {
+  name: string;
+  kind: "branch" | "remote" | "tag";
+}
+
+export interface LogEntry {
+  sha: string;
+  short: string;
+  subject: string;
+  body: string;
+  author: string;
+  /** ms since epoch */
+  time: number;
+  claude: boolean;
+  merge: boolean;
+  refs: RefLabel[];
+  files: number;
+  adds: number;
+  dels: number;
+  /** Above the merge-base: the branch's own commit. */
+  onBranch: boolean;
+}
+
+export interface BranchLog {
+  head: string;
+  base: string | null;
+  mergeBase: string | null;
+  entries: LogEntry[];
+  more: boolean;
+}
+
+export interface CommitDetail {
+  entry: LogEntry;
+  parent: string | null;
+  files: FileDiff[];
+  /** Changed files left out of `files`. */
+  omitted: number;
+}
+
 // Transcripts (SPEC §3.2) and intent groups (§3.3)
 
 export type EditTool = "Edit" | "MultiEdit" | "Write" | "NotebookEdit";

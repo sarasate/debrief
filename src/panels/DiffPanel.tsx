@@ -9,6 +9,7 @@ import { jumpToLine, runAction } from "../hooks/useKeybindings";
 import { groupOf, splitPath } from "../lib/changeset";
 import { errText } from "../lib/invoke";
 import { keyFor } from "../lib/keymap";
+import { restoreScroll } from "../lib/scroll";
 import { useUI } from "../store/ui";
 import type { DiffHunk, DiffLine, TurnKey, Verdict } from "../lib/types";
 import { agoLabel } from "../hooks/useNow";
@@ -42,8 +43,9 @@ export function DiffPanel() {
     }
   }, [diff, hunkId]);
 
-  // A new file starts at the top.
+  // A new file starts at the top; coming back from a commit, where it was.
   useEffect(() => {
+    if (restoreScroll("diff")) return;
     const el = document.querySelector<HTMLElement>('[data-panel-scroll="diff"]');
     if (el) el.scrollTop = 0;
   }, [path]);
@@ -286,7 +288,7 @@ function CleanState() {
   );
 }
 
-function Notice({ text, danger = false }: { text: string; danger?: boolean }) {
+export function Notice({ text, danger = false }: { text: string; danger?: boolean }) {
   return (
     <div
       className={[
@@ -334,7 +336,7 @@ type Segment = Gap | { kind: "hunk"; hunk: DiffHunk };
  * `file` is given. A hunk with no new lines (a pure deletion) sits after
  * line `newStart`; the old side's offset is carried across each hunk.
  */
-function segments(hunks: DiffHunk[], file: string[] | undefined): Segment[] {
+export function segments(hunks: DiffHunk[], file: string[] | undefined): Segment[] {
   if (!file) return hunks.map((hunk) => ({ kind: "hunk", hunk }));
   const out: Segment[] = [];
   let next = 1; // next new-side line not yet shown
@@ -364,7 +366,7 @@ function hashLines(lines: string[]): string {
   return (h >>> 0).toString(36);
 }
 
-function Unchanged({ path, gap }: { path: string; gap: Gap }) {
+export function Unchanged({ path, gap }: { path: string; gap: Gap }) {
   const lines: DiffLine[] = gap.lines.map((content, i) => ({
     kind: "context",
     content,
@@ -381,20 +383,25 @@ function Unchanged({ path, gap }: { path: string; gap: Gap }) {
   );
 }
 
-function Hunk({
+/** A hunk; `readOnly` (a past commit) drops the verdict buttons and moves
+ * the commit's own hunk cursor instead of the review's. */
+export function Hunk({
   path,
   hunk,
   current,
   verdict,
   committed,
+  readOnly = false,
 }: {
   path: string;
   hunk: DiffHunk;
   current: boolean;
   verdict: Verdict | null;
   committed: boolean;
+  readOnly?: boolean;
 }) {
   const qc = useQueryClient();
+  const select = () => (readOnly ? useUI.getState().setLogHunk(hunk.id) : useUI.getState().setHunk(hunk.id));
   const large = hunk.lines.length > COLLAPSE_LINES;
   const open = useUI((s) => !large || !!s.expanded[hunk.id]);
   const tokens = useTokens(`${path}:${hunk.id}`, path, hunk.lines.map((l) => l.content), open);
@@ -408,7 +415,7 @@ function Hunk({
       data-hunk={hunk.id}
       data-new-start={hunk.newStart}
       data-new-end={hunk.newStart + hunk.newLines - 1}
-      onClick={() => useUI.getState().setHunk(hunk.id)}
+      onClick={select}
       className={["bg-bg-deep border", current ? "border-hud/40" : "border-hud/[.12]"].join(" ")}
     >
       <div className="flex items-center gap-2 pl-3 pr-[6px] py-[5px] border-b border-hud/10 bg-hud/[.03]">
@@ -429,12 +436,16 @@ function Hunk({
             {committed ? "REVERT REQUESTED" : "MARKED FOR DISCARD"}
           </span>
         )}
-        <button type="button" onClick={decide("hunk.keep")} className={`${verdictBtn} ${verdict === "keep" ? KEEP_ON : VERDICT_OFF}`}>
-          <span className="font-bold">Y</span> KEEP
-        </button>
-        <button type="button" onClick={decide("hunk.revert")} className={`${verdictBtn} ${verdict === "revert" ? REVERT_ON : VERDICT_OFF}`}>
-          <span className="font-bold">X</span> REVERT
-        </button>
+        {!readOnly && (
+          <>
+            <button type="button" onClick={decide("hunk.keep")} className={`${verdictBtn} ${verdict === "keep" ? KEEP_ON : VERDICT_OFF}`}>
+              <span className="font-bold">Y</span> KEEP
+            </button>
+            <button type="button" onClick={decide("hunk.revert")} className={`${verdictBtn} ${verdict === "revert" ? REVERT_ON : VERDICT_OFF}`}>
+              <span className="font-bold">X</span> REVERT
+            </button>
+          </>
+        )}
       </div>
       {open ? (
         <div className={["overflow-x-auto py-[6px]", verdict === "revert" ? "opacity-[.35]" : ""].join(" ")}>
@@ -447,7 +458,7 @@ function Hunk({
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            useUI.getState().setHunk(hunk.id);
+            select();
             useUI.getState().toggleExpanded(hunk.id, true);
           }}
           className="dc-hov w-full py-3 text-center text-[10.5px] tracking-[0.16em] text-ink-faint"

@@ -12,7 +12,9 @@ import { QuitModal } from "./components/QuitModal";
 import { ConsolePanel } from "./panels/ConsolePanel";
 import { Toast } from "./components/Toast";
 import { ChangesetPanel } from "./panels/ChangesetPanel";
+import { CommitPanel } from "./panels/CommitPanel";
 import { DiffPanel } from "./panels/DiffPanel";
+import { HistoryPanel } from "./panels/HistoryPanel";
 import { OpsPanel } from "./panels/OpsPanel";
 import { NotesPanel } from "./panels/NotesPanel";
 import { useKeybindings, runAction } from "./hooks/useKeybindings";
@@ -31,6 +33,8 @@ export default function App() {
   useLook();
   // The resume drawer and the console share a slot; the console wins.
   const consoleOpen = useUI((s) => s.consoleOpen);
+  const leftView = useUI((s) => s.leftView);
+  const logSha = useUI((s) => s.logSha);
 
   // Quitting with a command running in the console asks first.
   useEffect(() => {
@@ -61,8 +65,8 @@ export default function App() {
       <main className="relative z-[5] flex-1 min-h-0 flex gap-[9px] p-[9px]">
         {repo ? (
           <>
-            <ChangesetPanel />
-            <DiffPanel />
+            {leftView === "history" ? <HistoryPanel /> : <ChangesetPanel />}
+            {logSha ? <CommitPanel sha={logSha} /> : <DiffPanel />}
             <div className="w-[330px] flex-none flex flex-col gap-[9px] min-h-0">
               <OpsPanel />
               <NotesPanel />

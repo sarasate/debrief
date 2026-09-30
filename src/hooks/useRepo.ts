@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { api } from "../lib/invoke";
 import { buildChangeset } from "../lib/changeset";
@@ -18,7 +18,9 @@ export const QK = {
   sessions: ["repo", "sessions"] as const,
   settings: ["settings"] as const,
   diffFile: (path: string | null, target: string) => ["repo", "diff", target, path] as const,
-  fileLines: (path: string | null, target: string) => ["repo", "file", target, path] as const,
+  fileLines: (path: string | null, target: string, sha: string | null) => ["repo", "file", target, path, sha] as const,
+  log: (target: string) => ["repo", "log", target] as const,
+  commit: (sha: string | null) => ["repo", "commit", sha] as const,
 };
 
 /** The review query key for the UI's current session pin and target. */
@@ -77,14 +79,36 @@ export function useDiffFile(path: string | null) {
   });
 }
 
-/** Only fetched while the full-file view is on. */
-export function useFileLines(path: string | null, enabled: boolean) {
+/** Only fetched while the full-file view is on. `sha`: the file in that commit. */
+export function useFileLines(path: string | null, enabled: boolean, sha: string | null = null) {
   const target = useUI((s) => targetKey(s.target));
   return useQuery({
-    queryKey: QK.fileLines(path, target),
-    queryFn: () => api.fileLines(path!),
+    queryKey: QK.fileLines(path, target, sha),
+    queryFn: () => api.fileLines(path!, sha),
     enabled: !!path && enabled,
   });
+}
+
+export const LOG_PAGE = 200;
+
+export function logKey() {
+  return QK.log(targetKey(useUI.getState().target));
+}
+
+/** The active branch's log, a page at a time (M13). */
+export function useBranchLog(enabled: boolean) {
+  const target = useUI((s) => targetKey(s.target));
+  return useInfiniteQuery({
+    queryKey: QK.log(target),
+    queryFn: ({ pageParam }) => api.branchLog(pageParam, LOG_PAGE),
+    initialPageParam: 0,
+    getNextPageParam: (last, pages) => (last.more ? pages.length * LOG_PAGE : undefined),
+    enabled,
+  });
+}
+
+export function useCommit(sha: string | null) {
+  return useQuery({ queryKey: QK.commit(sha), queryFn: () => api.commitDiff(sha!), enabled: !!sha });
 }
 
 export function useChangeset() {

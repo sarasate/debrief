@@ -19,6 +19,8 @@ import type {
   Target,
   TargetList,
   Verdict,
+  BranchLog,
+  CommitDetail,
 } from "./types";
 
 export const api = {
@@ -26,8 +28,10 @@ export const api = {
   repoCurrent: () => tauriInvoke<RepoInfo | null>("repo_current"),
   repoStatus: () => tauriInvoke<RepoStatus>("repo_status"),
   diffFile: (path: string) => tauriInvoke<FileDiff>("diff_file", { path }),
-  /** The whole new side of a changed file, for the full-file view. */
-  fileLines: (path: string) => tauriInvoke<string[]>("file_lines", { path }),
+  /** The whole new side of a changed file, for the full-file view; with `sha`, the file in that commit. */
+  fileLines: (path: string, sha: string | null = null) => tauriInvoke<string[]>("file_lines", { path, sha }),
+  branchLog: (skip: number, limit: number) => tauriInvoke<BranchLog>("branch_log", { skip, limit }),
+  commitDiff: (sha: string) => tauriInvoke<CommitDetail>("commit_diff", { sha }),
   sessionsList: () => tauriInvoke<SessionInfo[]>("sessions_list"),
   ledgerLoad: (sessionId: string) => tauriInvoke<Ledger>("ledger_load", { sessionId }),
   /** `sessionId` null picks the newest session for the repo. */

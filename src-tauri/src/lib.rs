@@ -93,10 +93,26 @@ fn diff_file(path: String, state: State<RepoState>) -> AppResult<FileDiff> {
     git::diff::diff_file(&state, &path)
 }
 
-/// The whole new side of a changed file, for the full-file view.
+/// The whole new side of a changed file, for the full-file view; with
+/// `sha`, the file as it is in that commit (branch history).
 #[tauri::command]
-fn file_lines(path: String, state: State<RepoState>) -> AppResult<Vec<String>> {
-    git::diff::file_lines(&state, &path)
+fn file_lines(path: String, sha: Option<String>, state: State<RepoState>) -> AppResult<Vec<String>> {
+    match sha {
+        Some(sha) => git::diff::file_lines_at(&state, &sha, &path),
+        None => git::diff::file_lines(&state, &path),
+    }
+}
+
+/// First-parent log of the active branch (M13), `limit` commits from `skip`.
+#[tauri::command]
+fn branch_log(skip: usize, limit: usize, state: State<RepoState>) -> AppResult<git::log::BranchLog> {
+    git::log::branch_log(&state, skip, limit)
+}
+
+/// One commit against its first parent, every file (M13).
+#[tauri::command]
+fn commit_diff(sha: String, state: State<RepoState>) -> AppResult<git::log::CommitDetail> {
+    git::log::commit_diff(&state, &sha)
 }
 
 /// Sessions for the open repo, newest first.
@@ -560,6 +576,8 @@ pub fn run() {
             repo_status,
             diff_file,
             file_lines,
+            branch_log,
+            commit_diff,
             sessions_list,
             ledger_load,
             review_model,
