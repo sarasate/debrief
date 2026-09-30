@@ -11,7 +11,7 @@ Debrief is a desktop app (Tauri 2) for reviewing the **uncommitted changes a Cla
 ## Reuse from `../git-ui` (read it, copy and adapt, don't import across repos)
 
 - `src-tauri/src/git/*`, `state.rs`, `watcher.rs`, `error.rs`: git2 status and diff, the `notify` watcher, the `AppResult` error type. `stage_hunk` already exists; hunk revert is the reverse-apply of the same patch.
-- `src/styles/hud.css`, `tailwind.config.js`: DEADBOLT tokens (`bg.*`, `ink.*`, `sig.*`, `--ac`), scanlines, sweep, vignette and corner brackets. Copy them unchanged, then add `sig.agent: #c08bff` for everything that comes from Claude.
+- `src/styles/hud.css`, `tailwind.config.js`: DEADBOLT tokens (`bg.*`, `ink.*`, `sig.*`, `--ac`), scanlines, vignette and corner brackets (the sweep and the animations were dropped). Copy them, then add `sig.agent: #c08bff` for everything that comes from Claude.
 - `src/components/HudFrame.tsx`, `CommandBar.tsx`, `HelpOverlay.tsx`, `CommandPalette.tsx`, `Toast.tsx`, `BootSequence.tsx`.
 - `src/lib/keymap.ts` + `src/hooks/useKeybindings.ts`: a single `BINDINGS` table that drives both the key handling and the help overlay. Keep that pattern.
 - `src/store/ui.ts` (zustand), `src/hooks/useRepo.ts` (react-query), `src/lib/invoke.ts`.

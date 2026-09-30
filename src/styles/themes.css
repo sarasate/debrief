@@ -9,7 +9,7 @@
    Each theme also sets:
    - `--ac-cyan` … `--ac-red`: its four accents; `data-accent` picks one.
    - `--diff-bg`: alpha of the add / delete line backgrounds.
-   - `--fx-*`: the HUD effects (scanlines, vignette, sweep, flicker).
+   - `--fx-*`: the HUD effects (scanlines, vignette).
    - `--shiki-token-*`: syntax colours inside diff lines.
    - `--term-*`: the console's ANSI palette (xterm.js reads these as-is). */
 
@@ -60,8 +60,6 @@
 
   --fx-scan: rgba(0, 0, 0, 0.16);
   --fx-vignette: inset 0 0 220px rgba(0, 0, 0, 0.72);
-  --fx-sweep: 5%;
-  --fx-flick: flick 8s infinite;
 
   --shiki-token-keyword: #6fc3d6;
   --shiki-token-constant: #e0a372;
@@ -97,7 +95,7 @@
 }
 
 /* Daylight: DEADBOLT's structure on paper. Signal colours are darkened to
-   about 4.5:1 on bg.panel; the effects are faint and the flicker is off. */
+   about 4.5:1 on bg.panel; the effects are faint. */
 :root[data-theme="daylight"] {
   color-scheme: light;
 
@@ -143,8 +141,6 @@
 
   --fx-scan: rgba(0, 0, 0, 0.035);
   --fx-vignette: inset 0 0 160px rgba(0, 0, 0, 0.07);
-  --fx-sweep: 3%;
-  --fx-flick: none;
 
   --shiki-token-keyword: #0b7285;
   --shiki-token-constant: #b35a1f;
@@ -227,8 +223,6 @@
 
   --fx-scan: rgba(0, 0, 0, 0.16);
   --fx-vignette: inset 0 0 220px rgba(0, 0, 0, 0.72);
-  --fx-sweep: 5%;
-  --fx-flick: flick 8s infinite;
 
   --shiki-token-keyword: #7fc8c0;
   --shiki-token-constant: #e08a72;

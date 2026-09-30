@@ -39,9 +39,6 @@ export default {
         chrome: ["Saira", "system-ui", "sans-serif"],
         mono: ["JetBrains Mono", "ui-monospace", "monospace"],
       },
-      // The HUD's scan, sweep and flick keyframes live in hud.css: Tailwind
-      // only emits keyframes for `animate-*` classes, and those three are
-      // used from plain CSS.
       keyframes: {
         blink: {
           "0%,49%": { opacity: "1" },

@@ -54,7 +54,6 @@ export default function App() {
   return (
     <div className="dc-root flex flex-col h-screen w-screen overflow-hidden text-[12px]">
       <div className="dc-scanlines" />
-      <div className="dc-sweep" />
       <div className="dc-vignette" />
 
       <StatusStrip />

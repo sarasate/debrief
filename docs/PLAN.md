@@ -203,10 +203,7 @@ Debrief has one look today: DEADBOLT, dark, with four accents. M12 makes the pal
 |---|---|---|
 | Scanlines `--fx-scan` | `rgba(0,0,0,.16)` multiply | `rgba(0,0,0,.035)` |
 | Vignette `--fx-vignette` | `inset 0 0 220px rgba(0,0,0,.72)` | `inset 0 0 160px rgba(0,0,0,.07)` |
-| Sweep `--fx-sweep` | accent 5% | accent 3% |
-| Flicker | on | off (`--fx-flick: none`) |
-
-The scanlines setting still turns scanlines and the sweep off in every theme.
+The scanlines setting still turns scanlines off in every theme. The animated sweep, scanline crawl and flicker were dropped after M12: fixing their keyframes showed they weren't worth it.
 
 **Palettes.** These are starting values, adjusted when reviewing the screenshots at the end of the milestone. The design file only has the dark look, so Daylight is derived from it: the same structure with the lightness flipped and the signal colours darkened until they reach about 4.5:1 contrast on `bg.panel`.
 
