@@ -15,6 +15,7 @@ mod theme;
 mod time;
 mod transcript;
 mod watcher;
+mod workspace;
 
 use error::{AppError, AppResult};
 use git::types::*;
@@ -33,6 +34,7 @@ use state::{discover_path, RepoState};
 use std::path::Path;
 use tauri::{AppHandle, Emitter, Manager, State};
 use watcher::RepoWatcher;
+use workspace::{Picked, RepoPeek, Workspace, WorkspaceScan};
 
 const REPO_CHANGED: &str = "repo://changed";
 const CONSOLE_EXIT: &str = "console://exit";
@@ -58,6 +60,16 @@ fn attach(path: &Path, state: &RepoState, watcher: &RepoWatcher, app: AppHandle)
     Ok(git::status::repo_info(&workdir))
 }
 
+/// What ⌘O opened: a repo, or a workspace root to pick one from.
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+enum OpenResult {
+    Repo { info: RepoInfo },
+    Root { scan: WorkspaceScan },
+}
+
+/// Open a repo, or a folder of repos as the workspace root (docs/PLAN.md
+/// M14). A root leaves the open repo (and its console) as it is.
 #[tauri::command]
 fn repo_open(
     path: String,
@@ -65,13 +77,64 @@ fn repo_open(
     watcher: State<RepoWatcher>,
     settings: State<SettingsStore>,
     consoles: State<Consoles>,
+    workspace: State<Workspace>,
     app: AppHandle,
-) -> AppResult<RepoInfo> {
-    // A console belongs to the repo it was opened in.
-    consoles.close_all();
-    let info = attach(Path::new(&path), &state, &watcher, app)?;
-    settings.update(|s| s.last_repo = Some(info.workdir.clone()))?;
-    Ok(info)
+) -> AppResult<OpenResult> {
+    match workspace::classify(Path::new(&path))? {
+        Picked::Repo(dir) => {
+            // A console belongs to the repo it was opened in.
+            consoles.close_all();
+            let info = attach(&dir, &state, &watcher, app)?;
+            settings.update(|s| s.last_repo = Some(info.workdir.clone()))?;
+            Ok(OpenResult::Repo { info })
+        }
+        Picked::Root(mut scan) => {
+            settings.update(|s| s.workspace_root = Some(scan.root.clone()))?;
+            workspace.set(scan.clone());
+            with_session_times(&mut scan);
+            Ok(OpenResult::Root { scan })
+        }
+    }
+}
+
+/// Session ages are read fresh on every call; the folder walk is cached.
+fn with_session_times(scan: &mut WorkspaceScan) {
+    let Some(projects) = projects_dir() else { return };
+    let times = workspace::session_times(&projects, &scan.repos);
+    for r in &mut scan.repos {
+        r.last_session = times.get(&r.path).copied();
+    }
+}
+
+/// The repos under the workspace root; None when no root is set. A root
+/// that has gone is forgotten, with an error saying so.
+#[tauri::command]
+fn workspace_scan(fresh: bool, settings: State<SettingsStore>, workspace: State<Workspace>) -> AppResult<Option<WorkspaceScan>> {
+    let Some(root) = settings.get().workspace_root else { return Ok(None) };
+    if !Path::new(&root).is_dir() {
+        settings.update(|s| s.workspace_root = None)?;
+        workspace.clear();
+        return Err(AppError::Input(format!("workspace root {root} is gone")));
+    }
+    let mut scan = workspace.scan(Path::new(&root), fresh);
+    with_session_times(&mut scan);
+    Ok(Some(scan))
+}
+
+/// Branch, changed count and HEAD time for repos the last scan listed.
+#[tauri::command]
+async fn workspace_status(paths: Vec<String>, workspace: State<'_, Workspace>) -> AppResult<Vec<RepoPeek>> {
+    let paths = workspace.listed(&paths)?;
+    tauri::async_runtime::spawn_blocking(move || workspace::peek_all(&paths))
+        .await
+        .map_err(|e| AppError::Other(e.to_string()))
+}
+
+#[tauri::command]
+fn workspace_clear(settings: State<SettingsStore>, workspace: State<Workspace>) -> AppResult<Settings> {
+    settings.update(|s| s.workspace_root = None)?;
+    workspace.clear();
+    Ok(settings.get())
 }
 
 /// The repo restored at startup (or opened since), if any.
@@ -529,6 +592,7 @@ pub fn run() {
         .manage(ReviewStore::new())
         .manage(ClaudeRunner::new())
         .manage(Consoles::new())
+        .manage(Workspace::new())
         .manage(QuitConfirmed(AtomicBool::new(false)))
         .on_window_event(|window, event| {
             // macOS changed appearance: repaint the native background when
@@ -573,6 +637,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             repo_open,
             repo_current,
+            workspace_scan,
+            workspace_status,
+            workspace_clear,
             repo_status,
             diff_file,
             file_lines,

@@ -9,6 +9,9 @@ use std::path::PathBuf;
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     pub last_repo: Option<String>,
+    /// A folder of repos opened with ⌘O; `P` switches between them
+    /// (docs/PLAN.md M14).
+    pub workspace_root: Option<String>,
     /// How `f` delivers notes (SPEC §6). Resume is opt-in: picking it is the
     /// opt-in.
     pub transmit_mode: TransmitMode,
@@ -32,6 +35,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             last_repo: None,
+            workspace_root: None,
             transmit_mode: TransmitMode::default(),
             claude_path: None,
             accent: Accent::default(),
@@ -166,6 +170,18 @@ mod tests {
         assert!(raw.contains(r#""themeMode": "dark""#) && raw.contains(r#""darkTheme": "ember""#), "{raw}");
         let s = SettingsStore::load(file).get();
         assert_eq!((s.theme_mode, s.dark_theme), (ThemeMode::Dark, DarkTheme::Ember));
+    }
+
+    #[test]
+    fn m13_settings_file_loads_with_no_workspace_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("settings.json");
+        std::fs::write(&file, r#"{"lastRepo":"/r","themeMode":"dark","terminalApp":"iTerm"}"#).unwrap();
+        let s = SettingsStore::load(file.clone()).get();
+        assert_eq!((s.last_repo.as_deref(), s.workspace_root.as_deref()), (Some("/r"), None));
+        SettingsStore::load(file.clone()).update(|s| s.workspace_root = Some("/ws".into())).unwrap();
+        assert!(std::fs::read_to_string(&file).unwrap().contains(r#""workspaceRoot": "/ws""#));
+        assert_eq!(SettingsStore::load(file).get().workspace_root.as_deref(), Some("/ws"));
     }
 
     #[test]
