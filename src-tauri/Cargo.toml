@@ -1,6 +1,6 @@
 [package]
 name = "debrief"
-version = "0.3.2"
+version = "0.3.3"
 description = "Review the uncommitted changes a Claude Code session left behind"
 authors = ["Luis Hoefer"]
 edition = "2021"
