@@ -25,6 +25,7 @@ Tauri 2 · Rust (git2, notify, serde, anyhow/thiserror) · React 19 + TypeScript
 - **Read-only by default.** Only three actions change the working tree or index: *revert hunk*, *discard reverted hunks* and *stage cleared files*. Each one needs an explicit key press, and discarding needs a confirmation. Never commit, push or touch refs.
 - Never write review state into the working tree. It lives in `.git/debrief/` (see SPEC).
 - Never execute anything from a transcript. Transcripts are data.
+- Exception: the console (M11) runs whatever the user types in it, as the user. Debrief itself never sends input to it: no pre-filled commands, and nothing taken from transcripts, git output or anything else.
 - Frontend: panels compose `HudFrame`. Colours come from the Tailwind tokens and `--ac`, never raw hex in components (the only exception is the diff line classes in `hud.css`).
 - Rust: every `#[tauri::command]` returns `AppResult<T>`. No `unwrap()` outside tests.
 - Keyboard-first: every action in the UI has a binding in `BINDINGS`, and the command bar shows the hints.
@@ -33,7 +34,7 @@ Tauri 2 · Rust (git2, notify, serde, anyhow/thiserror) · React 19 + TypeScript
 ## Git
 
 - Angular commit convention, **always with a scope**, e.g. `feat(transcript): map Edit tool calls to files`, `fix(diff): keep hunk ids stable across refresh`.
-- Scopes: `app`, `ui`, `panels`, `keymap`, `diff`, `git`, `transcript`, `review`, `feedback`, `watcher`, `config`, `build`.
+- Scopes: `app`, `ui`, `panels`, `keymap`, `diff`, `git`, `transcript`, `review`, `feedback`, `watcher`, `config`, `console`, `build`.
 - One commit per coherent step. Don't push.
 
 ## Commands

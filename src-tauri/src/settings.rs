@@ -18,11 +18,23 @@ pub struct Settings {
     /// The DEADBOLT accents (SPEC §2).
     pub accent: Accent,
     pub scanlines: bool,
+    /// Console drawer height, % of the window.
+    pub console_height: u8,
+    /// App `O` opens the repo in (`open -a <app>`).
+    pub terminal_app: String,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { last_repo: None, transmit_mode: TransmitMode::default(), claude_path: None, accent: Accent::default(), scanlines: true }
+        Self {
+            last_repo: None,
+            transmit_mode: TransmitMode::default(),
+            claude_path: None,
+            accent: Accent::default(),
+            scanlines: true,
+            console_height: 40,
+            terminal_app: "Terminal".into(),
+        }
     }
 }
 
@@ -99,6 +111,7 @@ mod tests {
         assert_eq!(s.transmit_mode, TransmitMode::Clipboard);
         assert_eq!(s.accent, Accent::Cyan);
         assert!(s.scanlines, "scanlines default on");
+        assert_eq!((s.console_height, s.terminal_app.as_str()), (40, "Terminal"));
     }
 
     #[test]

@@ -1,6 +1,7 @@
 mod actions;
 mod branch;
 mod claude;
+mod console;
 mod error;
 mod flags;
 mod git;
@@ -18,6 +19,9 @@ use error::{AppError, AppResult};
 use git::types::*;
 use review::ReviewModel;
 use claude::ClaudeRunner;
+use console::{Consoles, ShellSpec};
+use std::sync::atomic::{AtomicBool, Ordering};
+use tauri::ipc::{Channel, InvokeResponseBody};
 use review_state::{Note, ReviewStore, TransmitMode, Verdict, NO_SESSION};
 use serde::Serialize;
 use settings::{Accent, Settings};
@@ -30,6 +34,11 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use watcher::RepoWatcher;
 
 const REPO_CHANGED: &str = "repo://changed";
+const CONSOLE_EXIT: &str = "console://exit";
+const QUIT_REQUESTED: &str = "console://quit-requested";
+
+/// Set once the user confirmed quitting with a command still running.
+struct QuitConfirmed(AtomicBool);
 
 /// Point the app at the repo containing `path` and start watching it.
 fn attach(path: &Path, state: &RepoState, watcher: &RepoWatcher, app: AppHandle) -> AppResult<RepoInfo> {
@@ -54,8 +63,11 @@ fn repo_open(
     state: State<RepoState>,
     watcher: State<RepoWatcher>,
     settings: State<SettingsStore>,
+    consoles: State<Consoles>,
     app: AppHandle,
 ) -> AppResult<RepoInfo> {
+    // A console belongs to the repo it was opened in.
+    consoles.close_all();
     let info = attach(Path::new(&path), &state, &watcher, app)?;
     settings.update(|s| s.last_repo = Some(info.workdir.clone()))?;
     Ok(info)
@@ -350,6 +362,8 @@ fn settings_set(
     claude_path: Option<String>,
     accent: Option<Accent>,
     scanlines: Option<bool>,
+    console_height: Option<u8>,
+    terminal_app: Option<String>,
     settings: State<SettingsStore>,
 ) -> AppResult<Settings> {
     if let Some(p) = claude_path.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
@@ -364,6 +378,12 @@ fn settings_set(
         if let Some(on) = scanlines {
             s.scanlines = on;
         }
+        if let Some(h) = console_height {
+            s.console_height = h.clamp(15, 85);
+        }
+        if let Some(a) = terminal_app.as_deref().map(str::trim).filter(|a| !a.is_empty()) {
+            s.terminal_app = a.to_string();
+        }
         if let Some(m) = transmit_mode {
             s.transmit_mode = m;
         }
@@ -374,9 +394,84 @@ fn settings_set(
     Ok(settings.get())
 }
 
+#[derive(Clone, Serialize)]
+struct ConsoleExit {
+    id: u32,
+    code: Option<u32>,
+}
+
+/// Start a shell in the repo root. Output streams over `on_output` as raw
+/// bytes; `console://exit` fires when the shell ends.
+#[tauri::command]
+fn console_open(
+    cols: u16,
+    rows: u16,
+    on_output: Channel<InvokeResponseBody>,
+    state: State<RepoState>,
+    consoles: State<Consoles>,
+    app: AppHandle,
+) -> AppResult<u32> {
+    let cwd = state.path()?;
+    consoles.open(
+        &cwd,
+        cols,
+        rows,
+        &ShellSpec::default(),
+        move |bytes| {
+            let _ = on_output.send(InvokeResponseBody::Raw(bytes));
+        },
+        move |id, code| {
+            let _ = app.emit(CONSOLE_EXIT, ConsoleExit { id, code });
+        },
+    )
+}
+
+/// Keystrokes from the terminal widget. Only ever called with what the user
+/// typed or pasted.
+#[tauri::command]
+fn console_write(id: u32, data: String, consoles: State<Consoles>) -> AppResult<()> {
+    consoles.write(id, data.as_bytes())
+}
+
+#[tauri::command]
+fn console_resize(id: u32, cols: u16, rows: u16, consoles: State<Consoles>) -> AppResult<()> {
+    consoles.resize(id, cols, rows)
+}
+
+#[tauri::command]
+fn console_close(id: u32, consoles: State<Consoles>) -> AppResult<bool> {
+    Ok(consoles.close(id))
+}
+
+/// After the "a command is still running" confirmation: stop the consoles
+/// and quit.
+#[tauri::command]
+fn console_quit(consoles: State<Consoles>, confirmed: State<QuitConfirmed>, app: AppHandle) -> AppResult<()> {
+    confirmed.0.store(true, Ordering::SeqCst);
+    consoles.close_all();
+    app.exit(0);
+    Ok(())
+}
+
+/// `O`: open the repo root in the terminal app from settings (`open -a`).
+/// No shell in between: the app name and path are plain arguments.
+#[tauri::command]
+fn open_in_terminal(state: State<RepoState>, settings: State<SettingsStore>) -> AppResult<String> {
+    let app = settings.get().terminal_app;
+    let app = app.trim();
+    if app.is_empty() {
+        return Err(AppError::Input("no terminal app set".into()));
+    }
+    let out = std::process::Command::new("/usr/bin/open").arg("-a").arg(app).arg(state.path()?).output()?;
+    if !out.status.success() {
+        return Err(AppError::Other(format!("open -a {app}: {}", String::from_utf8_lossy(&out.stderr).trim())));
+    }
+    Ok(app.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let result = tauri::Builder::default()
+    let built = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .manage(RepoState::new())
@@ -384,6 +479,18 @@ pub fn run() {
         .manage(TranscriptCache::new())
         .manage(ReviewStore::new())
         .manage(ClaudeRunner::new())
+        .manage(Consoles::new())
+        .manage(QuitConfirmed(AtomicBool::new(false)))
+        .on_window_event(|window, event| {
+            // Closing the window with a command running asks first.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let app = window.app_handle();
+                if app.state::<Consoles>().busy() && !app.state::<QuitConfirmed>().0.load(Ordering::SeqCst) {
+                    api.prevent_close();
+                    let _ = app.emit(QUIT_REQUESTED, ());
+                }
+            }
+        })
         .setup(|app| {
             let dir = app
                 .path()
@@ -420,10 +527,31 @@ pub fn run() {
             transmit_cancel,
             settings_get,
             settings_set,
+            console_open,
+            console_write,
+            console_resize,
+            console_close,
+            console_quit,
+            open_in_terminal,
         ])
-        .run(tauri::generate_context!());
-    if let Err(e) = result {
-        eprintln!("debrief: {e}");
-        std::process::exit(1);
-    }
+        .build(tauri::generate_context!());
+    let app = match built {
+        Ok(app) => app,
+        Err(e) => {
+            eprintln!("debrief: {e}");
+            std::process::exit(1);
+        }
+    };
+    app.run(|handle, event| match event {
+        // ⌘Q with a command running in the console asks first.
+        tauri::RunEvent::ExitRequested { api, .. } => {
+            if handle.state::<Consoles>().busy() && !handle.state::<QuitConfirmed>().0.load(Ordering::SeqCst) {
+                api.prevent_exit();
+                let _ = handle.emit(QUIT_REQUESTED, ());
+            }
+        }
+        // Never leave a shell behind.
+        tauri::RunEvent::Exit => handle.state::<Consoles>().close_all(),
+        _ => {}
+    });
 }
