@@ -64,6 +64,13 @@ export function ChangesetPanel() {
           <input
             data-filter-input
             type="text"
+            // Paths, not prose: no macOS completion, correction or inline
+            // predictions (see CommandPalette).
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            {...{ writingsuggestions: "false" }}
             placeholder="filter path…"
             value={query}
             onChange={(e) => useUI.getState().setQuery(e.target.value)}
