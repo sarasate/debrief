@@ -113,6 +113,68 @@ Done when: I can open a Claude-authored PR from the palette, review it with inte
 
 ---
 
+## Console (M11)
+
+A real shell in the current repo, one shortcut away, for the quick things a review needs: run the tests, `git log -p` a file, try the thing Claude built. It opens in the repo root (the worktree being reviewed, not the app's own directory) and keeps running while you review.
+
+### Design
+
+**Shell.** A real pseudo-terminal, not a one-shot command runner, so interactive programs work: `vim`, `less`, `git add -p`, test watchers and colours.
+- **Backend:** `portable-pty` spawns `$SHELL -l` (the login shell, since a macOS GUI app starts with a bare PATH, the same problem `claude` had in M6), falling back to `/bin/zsh`.
+- **Environment:** the repo root as working directory, `TERM=xterm-256color`, and `DEBRIEF=1` so a prompt can show it's inside Debrief.
+- **Frontend:** xterm.js (`@xterm/xterm` + `@xterm/addon-fit`) renders it.
+
+**Streaming.** PTY output goes to the webview through a Tauri `Channel` as raw bytes, not the event bus: output can be heavy (a test run), and bytes avoid splitting a UTF-8 character across chunks. Keystrokes go back through `console_write`. Commands:
+
+```
+console_open(cols, rows, on_output: Channel<bytes>) -> id   // one per repo
+console_write(id, data)
+console_resize(id, cols, rows)
+console_close(id)                                           // kills the shell and its children
+```
+
+**Lifetime.**
+- **One console per repo**, started on first open. Hiding it doesn't stop the shell, so a running command keeps going, and showing it again brings back the scrollback.
+- **Stopped:** opening another repo or quitting the app kills it and its process group. A shell that exits on its own (`exit`) shows "shell exited · ^` to restart".
+- **Watcher:** it needs no changes. Files the console writes refresh the review through the existing watcher, like any other edit.
+
+**Layout.** A drawer between the panels and the command bar, where the resume output drawer sits (they share the slot; the console wins while it's open).
+- **Height:** starts at 40% of the window, resized by dragging its top edge, and remembered in settings.
+- **Look:** styled as a `HudFrame` (`▣ CONSOLE · <repo> · <shell>`). xterm's ANSI palette comes from CSS variables in `hud.css`, so no raw hex goes into components.
+
+**Keys.**
+- **`` ctrl+` ``** shows or hides the console and moves focus into or out of it. It works from anywhere, including inside the console. `:console` in the palette does the same.
+- **Inside the console, every other key goes to the shell,** including Escape (for vim), `ctrl+c`, `ctrl+d` and the single-letter review keys. The global handler already ignores text fields; it gets an explicit rule so Escape doesn't blur the terminal.
+- **`` ctrl+shift+` ``** restarts a shell that has exited, or kills a stuck one after asking.
+- **`^c` conflict:** M6's `^c` (stop a resume) only applies outside the console.
+
+**Safety, and CLAUDE.md.** The console is the one place Debrief runs arbitrary commands, so the rules need an explicit exception rather than an implied one:
+- **Only you type.** Debrief never writes into the console on its own: no pre-filled commands, and no "run this" buttons built from transcript `Bash` commands, git output or anything else. "Transcripts are data" still holds.
+- **CLAUDE.md gets one line:** *"Exception: the console (M11) runs whatever the user types in it, as the user; Debrief itself never sends input to it."*
+- **Quitting with a command still running** asks first.
+
+### Decisions needed
+
+1. **Drawer or separate window?**
+   - (a) A drawer in the main window: stays with the review, is keyboard-first, and needs one webview.
+   - (b) A separate native window (a second Tauri `WebviewWindow`): can go on another screen, but needs its own focus handling and capability.
+   
+   **Recommended: (a), with "pop out to window" as a later addition.**
+2. **Shortcut.**
+   - (a) `` ctrl+` ``, as in VS Code: it works inside the terminal without stealing a key the shell needs.
+   - (b) `` ` `` alone: faster, but you then can't type a backtick in the shell (command substitution) without a workaround.
+   
+   **Recommended: (a).**
+3. **Also offer "open in my terminal app"?** `O` would open Terminal / iTerm / Ghostty at the repo root with macOS `open`. It's cheap, and it's what people want for long sessions. **Recommended: yes, as a second binding, with the app configurable in settings.**
+
+### M11 — Console
+**Prompt:**
+> Implement the console from docs/PLAN.md "Console (M11)": a `console` Rust module on portable-pty (login shell, repo root as working directory, TERM=xterm-256color, output streamed over a Tauri Channel as bytes, resize, kill the process group on close, repo switch and app exit), the four console commands, and a resizable drawer with xterm.js + fit addon themed from CSS variables in hud.css. Bindings in BINDINGS: `` ctrl+` `` toggle and focus (also `:console`), `` ctrl+shift+` `` restart; every other key goes to the shell when it has focus, including Escape. Add the CLAUDE.md exception line. Apply the decisions recorded in the plan. Tests: spawn a shell in a temp dir, write `pwd` and `echo $TERM`, read both back; resize; close kills a running `sleep`.
+
+Done when: `` ctrl+` `` opens a shell in the repo under review, I can run the tests and use `vim` in it, hide it with a command still running and bring it back with the output intact, and the review refreshes from what the command changed.
+
+---
+
 ### Later (v2)
 - Claude-clustered intents (SPEC §3.3 v2), cached per diff hash.
 - A PostToolUse hook installer that writes `.git/debrief/ledger.jsonl` live, as a more robust alternative to transcript parsing.
