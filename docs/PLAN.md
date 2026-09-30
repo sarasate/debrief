@@ -138,7 +138,7 @@ console_close(id)                                           // kills the shell a
 - **Stopped:** opening another repo or quitting the app kills it and its process group. A shell that exits on its own (`exit`) shows "shell exited · ⌘⇧J to restart".
 - **Watcher:** it needs no changes. Files the console writes refresh the review through the existing watcher, like any other edit.
 
-**Layout.** A drawer between the panels and the command bar, where the resume output drawer sits (they share the slot; the console wins while it's open).
+**Layout.** A drawer that floats over the panels, anchored just above the command bar, so opening it never reflows the review (changed during M11; it first pushed the panels up). The resume output drawer is hidden while the console is open.
 - **Height:** starts at 40% of the window, resized by dragging its top edge, and remembered in settings.
 - **Look:** styled as a `HudFrame` (`▣ CONSOLE · <repo> · <shell>`). xterm's ANSI palette comes from CSS variables in `hud.css`, so no raw hex goes into components.
 

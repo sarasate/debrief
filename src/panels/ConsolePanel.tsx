@@ -218,7 +218,9 @@ export function ConsolePanel() {
   return (
     <div
       data-console
-      className="relative z-[6] flex-none flex flex-col mx-[9px] mb-[9px]"
+      // Floats over the panels, just above the 40px command bar, so opening
+      // it never reflows the review. Below modals (z-90+) and the scanlines.
+      className="absolute left-[9px] right-[9px] bottom-[49px] z-[40] flex flex-col shadow-[0_-18px_60px_theme(colors.bg.base/85%)]"
       style={{ height: `${shownHeight}vh`, display: open ? "flex" : "none" }}
     >
       <div
