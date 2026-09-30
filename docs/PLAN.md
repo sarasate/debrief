@@ -183,6 +183,83 @@ Done when: `⌘J` opens a shell in the repo under review and `⌘J` again takes 
 
 ---
 
+## Themes (M12)
+
+Debrief has one look today: DEADBOLT, dark, with four accents. M12 makes the palette themeable. It adds **Daylight**, a light theme picked automatically when macOS is in light mode, and **Ember**, a second dark theme that proves the system handles more than a light/dark pair. The accent stays a separate setting that works on top of any theme.
+
+### Design
+
+**Where colours live today.** The Tailwind tokens (`bg.*`, `ink.*`, `sig.*`) are hard-coded hex in `tailwind.config.js`. `hud.css` has its own hex and rgba values for the body, the root gradient, the diff lines, the shiki tokens, the `--term-*` ANSI palette, the flag flash, the scanlines and the vignette. Components are already clean: they only use tokens, `--ac` and `theme(colors.…)`. That means the work is in the config and the CSS, not in the panels.
+
+**Tokens become variables.**
+- Each token becomes an RGB channel variable, so Tailwind's alpha modifiers keep working: `base: "rgb(var(--bg-base) / <alpha-value>)"`, with `--bg-base: 6 9 12`. The 38 uses like `border-sig-warn/45` and `bg-ink-void/[.82]`, and the `theme(colors.sig.warn/20%)` shadows, stay as they are. Step 1 checks the `theme()` shadows against Tailwind 3.4 before converting the rest.
+- A new `src/styles/themes.css` holds one block per theme: `:root[data-theme="deadbolt"] { … }`, then `daylight` and `ember`. It is the only file with palette hex. `hud.css` refers to variables only: the diff lines, shiki, `--term-*`, the flash and a few new effect variables.
+- **Token names stay.** In a light theme, `ink.darkest` means "least contrast", not literally dark, and `bg.deep` means "recessed". A comment at the top of `themes.css` explains this, so no component needs renaming.
+- **Accent per theme.** A cyan of `#3df0ff` can't be read on a light background. Each theme defines its own four accents, e.g. `:root[data-theme="daylight"][data-accent="cyan"] { --ac: #0a8ca0; }`. The dark themes share the DEADBOLT accents. `ink.void` (text on an accent fill) becomes light in Daylight, because the accent fill there is dark.
+
+**HUD effects as variables.** The effects were tuned for black and look dirty on paper. Each one gets its values from the theme:
+
+| Effect | DEADBOLT / Ember | Daylight |
+|---|---|---|
+| Scanlines `--fx-scan` | `rgba(0,0,0,.16)` multiply | `rgba(0,0,0,.035)` |
+| Vignette `--fx-vignette` | `inset 0 0 220px rgba(0,0,0,.72)` | `inset 0 0 160px rgba(0,0,0,.07)` |
+| Sweep `--fx-sweep` | accent 5% | accent 3% |
+| Flicker | on | off (`--fx-flick: none`) |
+
+The scanlines setting still turns scanlines and the sweep off in every theme.
+
+**Palettes.** These are starting values, adjusted when reviewing the screenshots at the end of the milestone. The design file only has the dark look, so Daylight is derived from it: the same structure with the lightness flipped and the signal colours darkened until they reach about 4.5:1 contrast on `bg.panel`.
+
+| Token | DEADBOLT (today) | Daylight | Ember |
+|---|---|---|---|
+| `bg.base` / `panel` / `deep` | `#06090c` / `#080d10` / `#05080b` | `#e9eef0` / `#f7fafa` / `#e1e8ea` | `#0c0907` / `#110c09` / `#090605` |
+| `bg.grad1` / `grad2` | `#0d161d` / `#080f14` | `#ffffff` / `#eef3f4` | `#1a120d` / `#110b08` |
+| `ink.base` / `bright` / `dim` | `#bcccd0` / `#eaf6f8` / `#8aa0a6` | `#2c3a3f` / `#0b1418` / `#50656b` | `#d6c6b4` / `#fbefe2` / `#a8927e` |
+| `ink.dimmer` / `darkest` / `deepest` | `#5a6e72` / `#46585e` / `#3a4a50` | `#6f8388` / `#8a9ca1` / `#a3b2b6` | `#75624f` / `#5d4d3f` / `#4a3d32` |
+| `ink.void` | `#04080b` | `#f7fafa` | `#0a0604` |
+| `sig.warn` / `danger` / `ok` | `#ffb000` / `#ff5a3c` / `#7fd49a` | `#a86a00` / `#c8341c` / `#2e8a4a` | `#ffb000` / `#ff6a45` / `#9fd48a` |
+| `sig.add` / `delete` | `#7fd49a` / `#d98a7d` | `#2a7d43` / `#b24a3a` | `#9fd48a` / `#e0907a` |
+| `sig.agent` | `#c08bff` | `#7b3fd0` | `#d49bff` |
+| accent cyan / green / amber / red | `#3df0ff` / `#39ff7d` / `#ffb000` / `#ff5a3c` | `#0a8ca0` / `#178a45` / `#a86a00` / `#c8341c` | as DEADBOLT |
+
+The remaining tokens (`ink.light`, `mid`, `label`, `faint`, `agentVoid`, `sig.okDark`, `warnInk`, `deleteHi`, `dangerInk`, `dangerDark`) follow the same pattern. The shiki tokens and the 16 ANSI colours get a set per theme; Daylight's are the xterm "light" defaults, shifted towards the HUD hues.
+
+Ember is a warm charcoal and parchment dark, easy on the eyes at night. Its signal colours are close to DEADBOLT's, so flags, adds and deletes still look the same. It has a different base hue, which checks that nothing still assumes the cyan-grey palette.
+
+**Choosing the theme.** Two settings instead of one flat list, because "follow the system" needs to know which dark theme to use:
+
+```rust
+enum ThemeMode { System, Light, Dark }   // default System
+enum DarkTheme { Deadbolt, Ember }       // default Deadbolt
+```
+
+- **System:** Daylight when macOS is light, `dark_theme` when it's dark. It changes live when the system appearance changes, including macOS "Auto" at sunset.
+- **Light / Dark:** fixed to Daylight or `dark_theme`.
+- Both settings use `#[serde(default)]`, so an existing `settings.json` loads without changes and keeps today's look on a dark Mac.
+
+**Resolving it.** `src/lib/theme.ts` turns `(mode, dark_theme, system appearance)` into a theme name. It writes `data-theme` and `color-scheme` (for native scrollbars and form controls) on `<html>`, next to the `data-accent` and `data-scanlines` that `App.tsx` already sets.
+- **System appearance:** `matchMedia("(prefers-color-scheme: dark)")` with a change listener. The window's native appearance follows the resolved theme through `getCurrentWindow().setTheme(…)` (`null` in System mode), so the title bar and traffic lights match the page.
+- **No flash at startup:** settings come from an async `invoke`, so the first paint can't wait for them. In Rust `setup`, the window theme and background colour are set from the stored settings before the window shows. A small inline script in `index.html` sets `data-theme` from `matchMedia` and the last resolved theme (a `localStorage` cache, used only for this), so the first frame is already right. The settings file stays the source of truth.
+- **Console:** `ConsolePanel` already re-reads `readTheme()` when the accent changes. It now also re-reads when the resolved theme changes, so a running shell gets the new colours without restarting.
+
+**Keys.** These are palette commands in the `LOOK` group of `BINDINGS`, like the accents, so they show up in the help overlay: `:theme system`, `:theme light`, `:theme dark`, `:theme deadbolt`, `:theme ember`. Picking a named theme sets both settings at once: `ember` sets mode Dark with dark theme Ember, and `daylight` sets mode Light. The command bar confirms with `theme · ember` or `theme · system (daylight)`.
+
+**CLAUDE.md.** The colour rule changes to: *"Colours come from the Tailwind tokens and `--ac`. Palette hex lives only in `src/styles/themes.css`."* The old exception for the diff line classes is no longer needed.
+
+### Decisions (settled 2026-09-30)
+
+1. **The accent setting works in every theme.** Daylight has darkened versions of the four accents; there is no fixed accent per theme.
+2. **Palette only.** The `:theme …` commands have no key of their own, like the accents.
+3. **The boot sequence follows the theme,** so it boots in Daylight when that's the resolved theme.
+
+### M12 — Themes
+**Prompt:**
+> Implement docs/PLAN.md "Themes (M12)". First convert the Tailwind tokens to `rgb(var(--…) / <alpha-value>)` and check that `theme(colors.x/NN%)` shadows still compile, then move all palette hex from `tailwind.config.js` and `hud.css` into `src/styles/themes.css` with `deadbolt` (exactly today's values, so nothing visibly changes), `daylight` and `ember` blocks, including per-theme accents, diff and shiki colours, `--term-*` and the `--fx-*` effect variables. Commit that before adding the new themes. Add `theme_mode` (system/light/dark) and `dark_theme` (deadbolt/ember) to Settings with serde defaults and `settings_set` support; `src/lib/theme.ts` resolves the theme from them and `prefers-color-scheme` (live), writes `data-theme` and `color-scheme`, and syncs the native window theme. Set the window theme and background in Rust `setup`, and add the inline pre-paint script to `index.html`. Re-theme the console and the boot sequence. Add the `:theme …` palette entries to BINDINGS, with no key (decision 2). Update the CLAUDE.md colour rule. Tests: settings without the new fields load with System/Deadbolt; round-trip of both fields. Check by hand, with screenshots of each theme for review: all panels, flag banner, discard and quit modals, toast, help overlay, palette, boot sequence, console running `ls --color` and `git log --color`, a diff with syntax highlighting.
+
+Done when: with macOS in light mode Debrief opens in Daylight with no dark flash, switching macOS to dark changes it live to DEADBOLT (or Ember if chosen), `:theme ember` sticks across restarts, the console follows every switch, and DEADBOLT looks exactly as before M12.
+
+---
+
 ### Later (v2)
 - Claude-clustered intents (SPEC §3.3 v2), cached per diff hash.
 - A PostToolUse hook installer that writes `.git/debrief/ledger.jsonl` live, as a more robust alternative to transcript parsing.
