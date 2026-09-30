@@ -39,21 +39,10 @@ export default {
         chrome: ["Saira", "system-ui", "sans-serif"],
         mono: ["JetBrains Mono", "ui-monospace", "monospace"],
       },
+      // The HUD's scan, sweep and flick keyframes live in hud.css: Tailwind
+      // only emits keyframes for `animate-*` classes, and those three are
+      // used from plain CSS.
       keyframes: {
-        scan: {
-          "0%": { transform: "translateY(0)" },
-          "100%": { transform: "translateY(6px)" },
-        },
-        sweep: {
-          "0%": { top: "-34%" },
-          "100%": { top: "130%" },
-        },
-        flick: {
-          "0%,95%,100%": { opacity: "1" },
-          "96%": { opacity: ".86" },
-          "98%": { opacity: ".98" },
-          "99%": { opacity: ".9" },
-        },
         blink: {
           "0%,49%": { opacity: "1" },
           "50%,100%": { opacity: "0" },
@@ -64,9 +53,6 @@ export default {
         },
       },
       animation: {
-        scan: "scan 1.1s steps(3) infinite",
-        sweep: "sweep 7s linear infinite",
-        flick: "flick 8s infinite",
         blink: "blink 1s steps(1) infinite",
         pulse: "pulse 2s infinite",
       },

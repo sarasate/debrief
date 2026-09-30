@@ -46,6 +46,27 @@ body,
   background: transparent;
 }
 
+/* HUD animations. Plain CSS, not Tailwind keyframes: Tailwind only emits
+   keyframes for the `animate-*` classes that use them. */
+@keyframes scan {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(6px); }
+}
+@keyframes sweep {
+  0% { top: -34%; }
+  100% { top: 130%; }
+}
+@keyframes flick {
+  0%, 95%, 100% { opacity: 1; }
+  96% { opacity: 0.86; }
+  98% { opacity: 0.98; }
+  99% { opacity: 0.9; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dc-root, .dc-scanlines, .dc-sweep { animation: none; }
+  .dc-sweep { display: none; }
+}
+
 /* App root: radial gradient + flicker on the whole shell */
 .dc-root {
   position: relative;
