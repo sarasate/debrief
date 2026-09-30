@@ -175,6 +175,14 @@ export function CommandPalette() {
           </span>
           <input
             ref={inputRef}
+            // A command line, not prose: no macOS completion, correction or
+            // inline predictions (WebKit's `writingsuggestions`, not yet in
+            // React's types).
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            {...{ writingsuggestions: "false" }}
             value={q}
             onChange={(e) => {
               setQ(e.target.value);
